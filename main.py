@@ -1,170 +1,130 @@
+# bot.py
 import discord
 from discord.ext import commands, tasks
 import ftplib
 import io
 import os
-import datetime
-import re
-import logging
+from datetime import datetime
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Pobierz zmienne środowiskowe (ustaw w Render lub .env)
+DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+FTP_HOST = os.getenv('FTP_HOST')
+FTP_PORT = int(os.getenv('FTP_PORT', 21))  # Domyślnie 21, ale podano 51421
+FTP_USER = os.getenv('FTP_USER')
+FTP_PASS = os.getenv('FTP_PASS')
+FTP_LOG_DIR = os.getenv('FTP_LOG_DIR')
 
-# Konfiguracja z env (Render)
-DISCORD_TOKEN          = os.getenv("DISCORD_TOKEN")
-FTP_HOST               = os.getenv("FTP_HOST")
-FTP_PORT               = int(os.getenv("FTP_PORT", 51421))
-FTP_USER               = os.getenv("FTP_USER")
-FTP_PASS               = os.getenv("FTP_PASS")
-FTP_LOG_DIR            = os.getenv("FTP_LOG_DIR", "/config/")
-CHECK_INTERVAL_SECONDS = int(os.getenv("CHECK_INTERVAL_SECONDS", 300))
-
-# Mapowanie kategorii → ID kanału Discord
-CHANNEL_MAPPING = {
-    "Airdrop":     int(os.getenv("CHANNEL_AIRDROP",     0)),
-    "Safezone":    int(os.getenv("CHANNEL_SAFEZONE",    0)),
-    "Quests":      int(os.getenv("CHANNEL_QUESTS",      0)),
-    "Vehicle":     int(os.getenv("CHANNEL_VEHICLE",     0)),
-    "AI":          int(os.getenv("CHANNEL_AI",          0)),
-    "Market":      int(os.getenv("CHANNEL_MARKET",      0)),
-    "BaseRaiding": int(os.getenv("CHANNEL_BASERAIDING", 0)),
-    "Chat":        int(os.getenv("CHANNEL_CHAT",        0)),
-    "Other":       int(os.getenv("CHANNEL_OTHER",       0)),   # fallback
+# ID kanałów dla różnych typów logów - ustaw w env variables na Render
+CHANNELS = {
+    'vehicle': int(os.getenv('VEHICLE_CHANNEL_ID', 0)),  # Dla [Vehicle...
+    'kill': int(os.getenv('KILL_CHANNEL_ID', 0)),        # Dla [Kill] (jeśli istnieją)
+    'quests': int(os.getenv('QUESTS_CHANNEL_ID', 0)),    # Dla [Expansion Quests]
+    'market': int(os.getenv('MARKET_CHANNEL_ID', 0)),    # Dla [Market]
+    'safezone': int(os.getenv('SAFEZONE_CHANNEL_ID', 0)),# Dla [Safezone]
+    'ai': int(os.getenv('AI_CHANNEL_ID', 0)),            # Dla [AI ...
+    'airdrop': int(os.getenv('AIRDROP_CHANNEL_ID', 0)),  # Dla [MissionAirdrop]
+    # Dodaj więcej jeśli potrzeba, np. 'baseraiding': int(os.getenv('BASERAIDING_CHANNEL_ID', 0)),
+    # 'chat': int(os.getenv('CHAT_CHANNEL_ID', 0)),
 }
 
-# Wzorce rozpoznawania kategorii
-CATEGORY_PATTERNS = {
-    "Airdrop":     re.compile(r'\[MissionAirdrop\]'),
-    "Safezone":    re.compile(r'\[Safezone\]'),
-    "Quests":      re.compile(r'\[Expansion Quests\]'),
-    "Vehicle":     re.compile(r'\[Vehicle(?:Enter|Leave|Engine|CarKey|Deleted|Cover)\]'),
-    "AI":          re.compile(r'\[AI(?: Object Patrol| Patrol)\]'),
-    "Market":      re.compile(r'\[Market\]'),
-    "BaseRaiding": re.compile(r'\[BaseRaiding\]'),
-    "Chat":        re.compile(r'\[Chat'),
-}
+# Stan: śledzenie ostatniego przetworzonego pliku i linii
+STATE_FILE = 'state.txt'
 
-class DayZLogBot(commands.Bot):
-    def __init__(self):
-        intents = discord.Intents.default()
-        intents.message_content = True
-        super().__init__(command_prefix='!', intents=intents)
-        self.last_position = {}  # filename → ostatnia pozycja w bajtach
-
-    async def setup_hook(self):
-        self.check_logs.start()
-        logger.info("Bot uruchomiony – cykliczne sprawdzanie logów aktywne")
-
-    @tasks.loop(seconds=CHECK_INTERVAL_SECONDS)
-    async def check_logs(self):
-        if not DISCORD_TOKEN or not FTP_HOST:
-            logger.error("Brak kluczowych zmiennych środowiskowych")
-            return
-
-        new_entries = await self.fetch_new_entries()
-        if not new_entries:
-            return
-
-        for filename, lines in new_entries.items():
-            grouped = self.group_lines_by_category(lines)
-
-            for category, cat_lines in grouped.items():
-                if not cat_lines:
-                    continue
-
-                channel_id = CHANNEL_MAPPING.get(category, CHANNEL_MAPPING.get("Other", 0))
-                if channel_id == 0:
-                    logger.warning(f"Brak kanału dla kategorii: {category}")
-                    continue
-
-                channel = self.get_channel(channel_id)
-                if not channel:
-                    logger.error(f"Nie znaleziono kanału {channel_id} dla {category}")
-                    continue
-
-                # Budujemy wiadomość
-                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                message = f"**{filename}**  ┇  **{category}**  ┇  {timestamp}\n\n"
-                message += "\n".join(cat_lines[:40])  # limitujemy ilość linii w jednej wiadomości
-
-                if len(cat_lines) > 40:
-                    message += f"\n\n… i jeszcze {len(cat_lines)-40} linii"
-
-                if len(message) > 1900:
-                    message = message[:1890] + "… (obcięto)"
-
-                try:
-                    await channel.send(message)
-                    logger.info(f"Wysłano {len(cat_lines)} linii → {category} ({channel.name})")
-                except Exception as e:
-                    logger.error(f"Błąd wysyłki do {category}: {e}")
-
-    async def fetch_new_entries(self):
-        new_data = {}
-        try:
-            with ftplib.FTP() as ftp:
-                ftp.connect(FTP_HOST, FTP_PORT)
-                ftp.login(FTP_USER, FTP_PASS)
-                ftp.cwd(FTP_LOG_DIR)
-
-                files = [f for f in ftp.nlst() if 'ExpLog' in f and f.endswith('.log')]
-
-                for fn in files:
-                    try:
-                        size = ftp.size(fn)
-                        last = self.last_position.get(fn, 0)
-
-                        if size <= last:
-                            continue
-
-                        bio = io.BytesIO()
-                        ftp.retrbinary(f"RETR {fn}", bio.write)
-                        bio.seek(last)
-                        new_content = bio.read().decode('utf-8', errors='replace')
-
-                        lines = [l for l in new_content.splitlines() if l.strip()]
-                        if lines:
-                            new_data[fn] = lines
-
-                        self.last_position[fn] = size
-                        logger.info(f"{fn} → nowa pozycja: {size} B")
-
-                    except ftplib.all_errors as e:
-                        logger.warning(f"Błąd pobierania {fn}: {e}")
-
-        except Exception as e:
-            logger.error(f"Błąd FTP: {e}", exc_info=True)
-
-        return new_data
-
-    def group_lines_by_category(self, lines):
-        groups = {cat: [] for cat in CATEGORY_PATTERNS}
-        groups["Other"] = []
-
-        for line in lines:
-            matched = False
-            for cat, pattern in CATEGORY_PATTERNS.items():
-                if pattern.search(line):
-                    groups[cat].append(line)
-                    matched = True
-                    break
-            if not matched:
-                groups["Other"].append(line)
-
-        return groups
-
-    @check_logs.before_loop
-    async def before(self):
-        await self.wait_until_ready()
-        logger.info("Bot gotowy – start monitorowania logów")
-
-
-bot = DayZLogBot()
+bot = commands.Bot(command_prefix='!', intents=discord.Intents.default())
 
 @bot.event
 async def on_ready():
-    logger.info(f"Zalogowano jako {bot.user}")
+    print(f'Bot is ready as {bot.user}')
+    check_logs.start()
 
+@tasks.loop(minutes=5)  # Sprawdza co 5 minut
+async def check_logs():
+    try:
+        # Połącz z FTP
+        ftp = ftplib.FTP()
+        ftp.connect(FTP_HOST, FTP_PORT)
+        ftp.login(FTP_USER, FTP_PASS)
+        ftp.cwd(FTP_LOG_DIR)
 
-if __name__ == "__main__":
-    bot.run(DISCORD_TOKEN)
+        # Pobierz listę plików
+        files = [f for f in ftp.nlst() if f.startswith('ExpLog_') and f.endswith('.log')]
+
+        if not files:
+            print('No log files found.')
+            ftp.quit()
+            return
+
+        # Sortuj pliki po dacie
+        def parse_date(filename):
+            date_str = filename.split('ExpLog_')[1].split('.log')[0]
+            return datetime.strptime(date_str, '%Y-%m-%d_%H-%M-%S')
+
+        files.sort(key=parse_date, reverse=True)
+        latest_log = files[0]
+
+        # Wczytaj stan
+        last_file = ''
+        last_line_num = 0
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE, 'r') as f:
+                lines = f.readlines()
+                if lines:
+                    last_file = lines[0].strip()
+                    last_line_num = int(lines[1].strip())
+
+        # Pobierz zawartość
+        content = io.BytesIO()
+        ftp.retrbinary(f'RETR {latest_log}', content.write)
+        content.seek(0)
+        log_text = content.read().decode('utf-8', errors='ignore')
+        lines = log_text.splitlines()
+
+        # Nowe linie
+        new_lines = []
+        if latest_log != last_file:
+            new_lines = lines
+        else:
+            new_lines = lines[last_line_num:]
+
+        if new_lines:
+            # Mapa keyword do typu kanału
+            keyword_to_channel = {
+                '[Vehicle': 'vehicle',
+                '[Kill': 'kill',
+                '[Expansion Quests]': 'quests',
+                '[Market]': 'market',
+                '[Safezone]': 'safezone',
+                '[AI ': 'ai',
+                '[MissionAirdrop]': 'airdrop',
+                # Dodaj więcej, np. '[BaseRaiding]': 'baseraiding',
+                # '[Chat - Admin]': 'chat',
+            }
+
+            for line in new_lines:
+                for keyword, channel_type in keyword_to_channel.items():
+                    if keyword in line:
+                        channel_id = CHANNELS.get(channel_type, 0)
+                        if channel_id != 0:
+                            channel = bot.get_channel(channel_id)
+                            if channel:
+                                message = f'**Nowy wpis z {latest_log}:**\n{line}'
+                                if len(message) > 2000:
+                                    message = message[:1997] + '...'
+                                await channel.send(message)
+                        break  # Zakładamy, że linia pasuje tylko do jednego typu
+
+            # Zapisz stan
+            with open(STATE_FILE, 'w') as f:
+                f.write(latest_log + '\n')
+                f.write(str(len(lines)) + '\n')
+
+        ftp.quit()
+    except Exception as e:
+        print(f'Error in check_logs: {e}')
+
+@bot.command()
+async def getlogs(ctx):
+    await check_logs()
+    await ctx.send('Sprawdzono logi.')
+
+bot.run(DISCORD_TOKEN)
