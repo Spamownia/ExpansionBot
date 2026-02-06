@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ Expansion - odczyt CAŁEGO najnowszego logu przy każdym starcie
+# main.py - Bot logów DayZ Expansion - odczyt całego najnowszego logu przy każdym starcie
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -55,7 +55,7 @@ def run_flask():
 @bot.event
 async def on_ready():
     teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{teraz}] BOT URUCHOMIONY jako {bot.user}")
+    print(f"[{teraz}] BOT URUCHOMIONY – on_ready wywołane")
 
     # Usuwamy stan – odczyt całego najnowszego logu
     if os.path.exists(PLIK_STANU):
@@ -71,7 +71,7 @@ async def on_ready():
                 f"• Zalogowano jako {bot.user}\n"
                 f"• Odczyt **całego** najnowszego pliku logu\n"
                 f"• Sprawdzanie co 60 sekund\n"
-                f"• Wszystkie linie z najnowszego logu idą tutaj"
+                f"• Wszystkie linie z najnowszego pliku idą tutaj"
             )
             print("Wysłano komunikat startowy")
         except Exception as e:
@@ -79,12 +79,13 @@ async def on_ready():
     else:
         print(f"Nie znaleziono kanału testowego {KANAŁ_TESTOWY_ID}")
 
-    # Natychmiastowe pierwsze sprawdzenie
+    # Natychmiastowe pierwsze sprawdzanie
     print("Natychmiastowe odczytanie najnowszego logu...")
     await sprawdz_logi()
 
     if not sprawdz_logi.is_running():
         sprawdz_logi.start()
+        print("Pętla sprawdz_logi uruchomiona")
 
 @tasks.loop(seconds=60)
 async def sprawdz_logi():
@@ -125,7 +126,7 @@ async def sprawdz_logi():
 
         print(f"Stan: plik={ostatni_plik}, linia={ostatnia_linia}")
 
-        # Pobierz cały plik
+        # Pobierz zawartość
         buf = io.BytesIO()
         ftp.retrbinary(f'RETR {najnowszy}', buf.write)
         ftp.quit()
