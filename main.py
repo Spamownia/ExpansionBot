@@ -1,4 +1,4 @@
-# main.py - Diagnostyczna wersja bota logów DayZ Expansion
+# main.py - Bot logów DayZ Expansion - odczyt całego najnowszego logu przy starcie
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -9,7 +9,7 @@ import asyncio
 import threading
 
 # ==================================================
-# KONFIGURACJA – Zmień tylko ID kanału testowego
+# KONFIGURACJA – Zmień tylko ID kanału testowego!
 # ==================================================
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
@@ -23,7 +23,7 @@ FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
 FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
 FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-KANAŁ_TESTOWY_ID = 1234567890123456789          # ← WPISZ PRAWDZIWE ID KANAŁU TESTOWEGO
+KANAŁ_TESTOWY_ID = 1234567890123456789          # ← ZMIEŃ NA PRAWDZIWE ID KANAŁU TESTOWEGO
 
 PLIK_STANU = 'stan.txt'
 
@@ -32,13 +32,13 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Flask – utrzymanie Web Service przy życiu
+# Flask – wymagany do Web Service na Render
 from flask import Flask
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
 def home():
-    return "Bot diagnostyczny działa"
+    return "Bot logów DayZ Expansion działa"
 
 @flask_app.route('/health')
 def health():
@@ -56,27 +56,32 @@ def run_flask():
 async def on_ready():
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] BOT URUCHOMIONY jako {bot.user}")
 
+    # Usuwamy plik stanu przy KAŻDYM starcie → odczyt całego najnowszego logu
+    if os.path.exists(PLIK_STANU):
+        os.remove(PLIK_STANU)
+        print("Usunięto plik stanu → odczytam CAŁY najnowszy log")
+
     kanal = bot.get_channel(KANAŁ_TESTOWY_ID)
     if kanal:
         try:
             await kanal.send(
-                f"🟢 **Diagnostyka start** {datetime.now():%Y-%m-%d %H:%M:%S}\n"
-                f"• Token OK, zalogowano\n"
-                f"• Sprawdzanie FTP co 60 sekund\n"
-                f"• WSZYSTKIE nowe linie idą tutaj\n"
-                f"• Czekam na nowe wpisy w logach..."
+                f"🟢 **BOT RESTART / DEPLOY** {datetime.now():%Y-%m-%d %H:%M:%S}\n"
+                f"• Zalogowano pomyślnie\n"
+                f"• Odczyt CAŁEGO najnowszego logu przy starcie\n"
+                f"• Sprawdzanie co 60 sekund\n"
+                f"• Wszystkie nowe linie → ten kanał (test)"
             )
             print("Wysłano komunikat startowy")
         except Exception as e:
             print(f"Błąd wysyłania startowego: {e}")
     else:
-        print(f"Nie znaleziono kanału {KANAŁ_TESTOWY_ID}")
+        print(f"Nie znaleziono kanału testowego {KANAŁ_TESTOWY_ID}")
 
     print("Pierwsze sprawdzenie logów – zaraz...")
-    await sprawdz_logi()           # ← od razu po starcie
+    await sprawdz_logi()           # ← natychmiast po starcie
     sprawdz_logi.start()
 
-@tasks.loop(seconds=60)           # ← 60 sekund – na testy
+@tasks.loop(seconds=60)
 async def sprawdz_logi():
     print(f"[{datetime.now():%H:%M:%S}] === START sprawdzania FTP ===")
     try:
@@ -102,7 +107,7 @@ async def sprawdz_logi():
         najnowszy = pliki[0]
         print(f"Najnowszy plik: {najnowszy}")
 
-        # Stan
+        # Stan (po usunięciu przy starcie będzie pusty → odczyt całego pliku)
         ostatni_plik = ''
         ostatnia_linia = 0
         if os.path.exists(PLIK_STANU):
@@ -114,7 +119,7 @@ async def sprawdz_logi():
 
         print(f"Stan: plik={ostatni_plik}, linia={ostatnia_linia}")
 
-        # Pobierz log
+        # Pobierz zawartość
         buf = io.BytesIO()
         ftp.retrbinary(f'RETR {najnowszy}', buf.write)
         ftp.quit()
@@ -129,23 +134,24 @@ async def sprawdz_logi():
         if nowe_linje:
             kanal = bot.get_channel(KANAŁ_TESTOWY_ID)
             if kanal:
-                print("Wysyłam nowe linie na kanał testowy...")
+                print("Wysyłam wszystkie nowe linie na kanał testowy...")
                 chunk_size = 10
                 for i in range(0, len(nowe_linje), chunk_size):
                     part = nowe_linje[i:i+chunk_size]
-                    msg = f"**Nowe linie ({najnowszy}) – część {i//chunk_size + 1}/{len(nowe_linje)//chunk_size + 1}**\n```log\n"
+                    msg = f"**Nowe linie ({najnowszy}) – część {i//chunk_size + 1}**\n```log\n"
                     msg += "\n".join(part)
                     msg += "\n```"
                     if len(msg) > 1950:
                         msg = msg[:1950] + "\n... (zbyt długie)"
                     await kanal.send(msg)
                     print(f"Wysłano chunk {i//chunk_size + 1}")
-                    await asyncio.sleep(1.5)  # unikamy rate-limit
+                    await asyncio.sleep(1.5)  # ochrona przed rate-limit
 
-            # Zapisz nowy stan
+            # Zapisz stan (po wysłaniu)
             with open(PLIK_STANU, 'w', encoding='utf-8') as f:
                 f.write(f"{najnowszy}\n{len(linie)}\n")
             print("Stan zapisany")
+
         else:
             print("Brak nowych linii")
 
@@ -158,5 +164,4 @@ if __name__ == '__main__':
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     print(f"Flask nasłuchuje na porcie {os.getenv('PORT', 10000)}")
-
     bot.run(DISCORD_TOKEN)
