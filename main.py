@@ -8,7 +8,7 @@ from datetime import datetime
 import asyncio
 import threading
 
-# ANSI kolory dla logów konsoli (Render)
+# ANSI kolory dla logów Render (konsola)
 class ANSI:
     RESET    = "\033[0m"
     BOLD     = "\033[1m"
@@ -19,11 +19,9 @@ class ANSI:
     MAGENTA  = "\033[95m"
     CYAN     = "\033[96m"
     WHITE    = "\033[97m"
-    BG_RED   = "\033[101m"
-    BG_GREEN = "\033[102m"
 
 # ==================================================
-# KONFIGURACJA – Zmień tylko ID kanałów
+# KONFIGURACJA
 # ==================================================
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
@@ -37,8 +35,7 @@ FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
 FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
 FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-# ID kanałów – ZMIEŃ NA SWOJE PRAWDZIWE
-KANAL_TESTOWY_ID = 1469089759958663403     # ← test / debug / niepasujące
+KANAL_TESTOWY_ID = 1469089759958663403
 KANAL_AIRDROP_ID = 1469089759958663403
 KANAL_MISJE_ID   = 1469089759958663403
 KANAL_RAIDING_ID = 1469089759958663403
@@ -51,13 +48,13 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Flask – wymagany dla Web Service
+# Flask
 from flask import Flask
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
 def home():
-    return "Bot logów DayZ działa"
+    return "Bot działa"
 
 @flask_app.route('/health')
 def health():
@@ -68,14 +65,14 @@ def run_flask():
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 # ==================================================
-# KOLORY EMBEDÓW NA DISCORD + ANSI w logach
+# KOLORY
 # ==================================================
 
-KOLOR_AIRDROP  = 0xFFAA00   # pomarańczowy
-KOLOR_MISJE    = 0x00AAFF   # jasnoniebieski
-KOLOR_RAIDING  = 0xFF0000   # czerwony
-KOLOR_POJAZDY  = 0x00FF88   # jasnozielony
-KOLOR_TEST     = 0xAAAAAA   # szary
+KOLOR_AIRDROP  = 0xFFAA00
+KOLOR_MISJE    = 0x00AAFF
+KOLOR_RAIDING  = 0xFF0000
+KOLOR_POJAZDY  = 0x00FF88
+KOLOR_TEST     = 0xAAAAAA
 
 ANSI_AIRDROP  = ANSI.YELLOW
 ANSI_MISJE    = ANSI.BLUE
@@ -92,14 +89,13 @@ ANSI_INFO     = ANSI.CYAN
 @bot.event
 async def on_ready():
     teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"{ANSI_INFO}{ANSI.BOLD}[{teraz}] BOT URUCHOMIONY – on_ready OK{ANSI.RESET}")
+    print(f"{ANSI.INFO}{ANSI.BOLD}[{teraz}] BOT URUCHOMIONY – on_ready OK{ANSI.RESET}")
 
-    # Usuwamy stan przy starcie → odczyt całego logu
+    # Wymuszamy odczyt całego logu przy KAŻDYM starcie
     if os.path.exists(PLIK_STANU):
         os.remove(PLIK_STANU)
-        print(f"{ANSI.YELLOW}Usunięto stan.txt → odczyt CAŁEGO najnowszego logu{ANSI.RESET}")
+        print(f"{ANSI.YELLOW}Usunięto stan.txt – wymuszony odczyt CAŁEGO logu{ANSI.RESET}")
 
-    # Komunikat startowy
     kanal_test = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal_test:
         embed = discord.Embed(
@@ -144,7 +140,7 @@ async def sprawdz_logi():
         najnowszy = pliki[0]
         print(f"{ANSI.YELLOW}Najnowszy plik: {najnowszy}{ANSI.RESET}")
 
-        # Stan
+        # Stan (ale po usunięciu będzie pusty → cały plik)
         ostatni_plik = ''
         ostatnia_linia = 0
         if os.path.exists(PLIK_STANU):
@@ -169,20 +165,18 @@ async def sprawdz_logi():
         print(f"{ANSI.YELLOW}Nowe linie do przetworzenia: {len(nowe_linje)}{ANSI.RESET}")
 
         if nowe_linje:
-            # Słownik: kategoria → (kanał, kolor_embed, ansi_kolor_log, nazwa)
             kategorie = {
-                'airdrop':  (bot.get_channel(KANAL_AIRDROP_ID),  KOLOR_AIRDROP,  ANSI_AIRDROP,  "Airdrop"),
-                'misje':    (bot.get_channel(KANAL_MISJE_ID),    KOLOR_MISJE,    ANSI_MISJE,    "Misje / Quests"),
-                'raiding':  (bot.get_channel(KANAL_RAIDING_ID),  KOLOR_RAIDING,  ANSI_RAIDING,  "Raiding / Bazy"),
-                'pojazdy':  (bot.get_channel(KANAL_POJAZDY_ID),  KOLOR_POJAZDY,  ANSI_POJAZDY,  "Pojazdy"),
-                'test':     (bot.get_channel(KANAL_TESTOWY_ID),  KOLOR_TEST,     ANSI_TEST,     "Inne / Test")
+                'airdrop':  (bot.get_channel(KANAL_AIRDROP_ID),  0xFFAA00, ANSI_AIRDROP,  "Airdrop"),
+                'misje':    (bot.get_channel(KANAL_MISJE_ID),    0x00AAFF, ANSI_MISJE,    "Misje / Quests"),
+                'raiding':  (bot.get_channel(KANAL_RAIDING_ID),  0xFF0000, ANSI_RAIDING,  "Raiding / Bazy"),
+                'pojazdy':  (bot.get_channel(KANAL_POJAZDY_ID),  0x00FF88, ANSI_POJAZDY,  "Pojazdy"),
+                'test':     (bot.get_channel(KANAL_TESTOWY_ID),  0xAAAAAA, ANSI_TEST,     "Inne / Test")
             }
 
             wysłane = 0
             for linia in nowe_linje:
                 kategoria = 'test'
 
-                # Przypisanie kategorii
                 if '[MissionAirdrop]' in linia:
                     kategoria = 'airdrop'
                 elif '[Expansion Quests]' in linia:
@@ -192,12 +186,12 @@ async def sprawdz_logi():
                 elif any(x in linia for x in ['[Vehicle', 'VehicleDeleted', 'VehicleEnter', 'VehicleLeave', 'VehicleEngine', 'VehicleCarKey']):
                     kategoria = 'pojazdy'
 
-                kanal, kolor_embed, ansi_kolor, nazwa = kategorie[kategoria]
+                kanal, kolor, ansi_kolor, nazwa = kategorie[kategoria]
 
                 if kanal:
                     embed = discord.Embed(
                         description=f"```log\n{linia}\n```",
-                        color=kolor_embed,
+                        color=kolor,
                         timestamp=datetime.now()
                     )
                     embed.set_author(name=nazwa)
@@ -209,11 +203,10 @@ async def sprawdz_logi():
                         print(f"{ansi_kolor}Wysłano linię do {nazwa} ({kategoria}){ANSI.RESET}")
                     except Exception as e:
                         print(f"{ANSI_ERROR}Błąd wysyłania do {nazwa}: {e}{ANSI.RESET}")
-                    await asyncio.sleep(0.9)  # ochrona przed rate-limit
+                    await asyncio.sleep(0.9)
 
             print(f"{ANSI.GREEN}{ANSI.BOLD}Wysłano łącznie {wysłane} linii{ANSI.RESET}")
 
-            # Zapisz stan
             with open(PLIK_STANU, 'w', encoding='utf-8') as f:
                 f.write(f"{najnowszy}\n{len(linie)}\n")
             print(f"{ANSI.GREEN}Stan zapisany{ANSI.RESET}")
