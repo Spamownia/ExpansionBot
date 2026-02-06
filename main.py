@@ -69,7 +69,7 @@ async def on_ready():
     print(f'Bot wystartował jako {bot.user}')
     sprawdz_logi.start()
 
-@tasks.loop(minutes=5)
+@tasks.loop(minutes=1)
 async def sprawdz_logi():
     # ... tutaj cała Twoja logika pobierania FTP i wysyłania do kanałów ...
     # (skopiuj funkcję sprawdz_logi z poprzedniej wersji)
