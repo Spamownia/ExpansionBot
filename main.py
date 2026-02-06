@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ Expansion - odczyt całego najnowszego logu przy starcie
+# main.py - Bot logów DayZ Expansion - odczyt CAŁEGO najnowszego logu przy każdym starcie
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -9,12 +9,12 @@ import asyncio
 import threading
 
 # ==================================================
-# KONFIGURACJA – Zmień tylko ID kanału testowego!
+# KONFIGURACJA – ZMIEŃ TYLKO TO
 # ==================================================
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN:
-    print("BRAK TOKENA → STOP")
+    print("BRAK DISCORD_TOKEN → STOP")
     exit(1)
 
 FTP_HOST = os.getenv('FTP_HOST', '147.93.162.60')
@@ -23,7 +23,7 @@ FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
 FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
 FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-KANAŁ_TESTOWY_ID = 1234567890123456789          # ← ZMIEŃ NA PRAWDZIWE ID KANAŁU TESTOWEGO
+KANAŁ_TESTOWY_ID = 1234567890123456789      # ← ZMIEŃ NA PRAWDZIWE ID KANAŁU TESTOWEGO !!!
 
 PLIK_STANU = 'stan.txt'
 
@@ -32,7 +32,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Flask – wymagany do Web Service na Render
+# Flask – wymagany dla Web Service na Render
 from flask import Flask
 flask_app = Flask(__name__)
 
@@ -54,22 +54,24 @@ def run_flask():
 
 @bot.event
 async def on_ready():
-    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] BOT URUCHOMIONY jako {bot.user}")
+    teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{teraz}] BOT URUCHOMIONY jako {bot.user}")
 
-    # Usuwamy plik stanu przy KAŻDYM starcie → odczyt całego najnowszego logu
+    # Usuwamy stan – odczyt całego najnowszego logu
     if os.path.exists(PLIK_STANU):
         os.remove(PLIK_STANU)
-        print("Usunięto plik stanu → odczytam CAŁY najnowszy log")
+        print("Usunięto stan.txt → odczytam CAŁY najnowszy log")
 
+    # Komunikat startowy
     kanal = bot.get_channel(KANAŁ_TESTOWY_ID)
     if kanal:
         try:
             await kanal.send(
-                f"🟢 **BOT RESTART / DEPLOY** {datetime.now():%Y-%m-%d %H:%M:%S}\n"
-                f"• Zalogowano pomyślnie\n"
-                f"• Odczyt CAŁEGO najnowszego logu przy starcie\n"
+                f"🟢 **BOT URUCHOMIONY / REDEPLOY** {teraz}\n"
+                f"• Zalogowano jako {bot.user}\n"
+                f"• Odczyt **całego** najnowszego pliku logu\n"
                 f"• Sprawdzanie co 60 sekund\n"
-                f"• Wszystkie nowe linie → ten kanał (test)"
+                f"• Wszystkie linie z najnowszego logu idą tutaj"
             )
             print("Wysłano komunikat startowy")
         except Exception as e:
@@ -77,13 +79,17 @@ async def on_ready():
     else:
         print(f"Nie znaleziono kanału testowego {KANAŁ_TESTOWY_ID}")
 
-    print("Pierwsze sprawdzenie logów – zaraz...")
-    await sprawdz_logi()           # ← natychmiast po starcie
-    sprawdz_logi.start()
+    # Natychmiastowe pierwsze sprawdzenie
+    print("Natychmiastowe odczytanie najnowszego logu...")
+    await sprawdz_logi()
+
+    if not sprawdz_logi.is_running():
+        sprawdz_logi.start()
 
 @tasks.loop(seconds=60)
 async def sprawdz_logi():
-    print(f"[{datetime.now():%H:%M:%S}] === START sprawdzania FTP ===")
+    teraz = datetime.now().strftime("%H:%M:%S")
+    print(f"[{teraz}] === START sprawdzania FTP ===")
     try:
         ftp = ftplib.FTP()
         ftp.connect(FTP_HOST, FTP_PORT)
@@ -107,7 +113,7 @@ async def sprawdz_logi():
         najnowszy = pliki[0]
         print(f"Najnowszy plik: {najnowszy}")
 
-        # Stan (po usunięciu przy starcie będzie pusty → odczyt całego pliku)
+        # Stan (po usunięciu będzie pusty → odczyt całego pliku)
         ostatni_plik = ''
         ostatnia_linia = 0
         if os.path.exists(PLIK_STANU):
@@ -119,7 +125,7 @@ async def sprawdz_logi():
 
         print(f"Stan: plik={ostatni_plik}, linia={ostatnia_linia}")
 
-        # Pobierz zawartość
+        # Pobierz cały plik
         buf = io.BytesIO()
         ftp.retrbinary(f'RETR {najnowszy}', buf.write)
         ftp.quit()
@@ -128,37 +134,37 @@ async def sprawdz_logi():
         linie = tekst.splitlines()
         print(f"Całkowita liczba linii w pliku: {len(linie)}")
 
+        # Przy starcie / braku stanu → bierzemy wszystko
         nowe_linje = linie if najnowszy != ostatni_plik else linie[ostatnia_linia:]
-        print(f"Nowe linie do przetworzenia: {len(nowe_linje)}")
+        print(f"Liczba linii do wysłania: {len(nowe_linje)}")
 
         if nowe_linje:
             kanal = bot.get_channel(KANAŁ_TESTOWY_ID)
             if kanal:
-                print("Wysyłam wszystkie nowe linie na kanał testowy...")
+                print("Wysyłam WSZYSTKIE linie na kanał testowy...")
                 chunk_size = 10
                 for i in range(0, len(nowe_linje), chunk_size):
                     part = nowe_linje[i:i+chunk_size]
-                    msg = f"**Nowe linie ({najnowszy}) – część {i//chunk_size + 1}**\n```log\n"
+                    msg = f"**Linie z {najnowszy} – część {i//chunk_size + 1}**\n```log\n"
                     msg += "\n".join(part)
                     msg += "\n```"
                     if len(msg) > 1950:
                         msg = msg[:1950] + "\n... (zbyt długie)"
                     await kanal.send(msg)
                     print(f"Wysłano chunk {i//chunk_size + 1}")
-                    await asyncio.sleep(1.5)  # ochrona przed rate-limit
+                    await asyncio.sleep(1.5)
 
-            # Zapisz stan (po wysłaniu)
+            # Zapisz stan dopiero po wysłaniu
             with open(PLIK_STANU, 'w', encoding='utf-8') as f:
                 f.write(f"{najnowszy}\n{len(linie)}\n")
             print("Stan zapisany")
-
         else:
-            print("Brak nowych linii")
+            print("Brak nowych linii do wysłania")
 
         print("=== KONIEC sprawdzania ===\n")
 
     except Exception as e:
-        print(f"Błąd podczas sprawdzania: {type(e).__name__}: {e}")
+        print(f"Błąd sprawdzania: {type(e).__name__}: {e}")
 
 if __name__ == '__main__':
     flask_thread = threading.Thread(target=run_flask, daemon=True)
