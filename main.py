@@ -1,4 +1,4 @@
-# main.py - Agresywny parser całego najnowszego logu DayZ Expansion
+# main.py - Bot logów DayZ Expansion – ANSI kolory w logach Render + kolorowe embedy na Discord
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -8,13 +8,25 @@ from datetime import datetime
 import asyncio
 import threading
 
+# ANSI kolory dla logów konsoli (Render)
+class ANSI:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    MAGENTA = "\033[95m"
+    CYAN = "\033[96m"
+    WHITE = "\033[97m"
+
 # ==================================================
-# KONFIGURACJA – Zmień TYLKO TO
+# KONFIGURACJA – Zmień ID kanałów
 # ==================================================
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN:
-    print("BRAK DISCORD_TOKEN → STOP")
+    print(f"{ANSI.RED}BRAK DISCORD_TOKEN → STOP{ANSI.RESET}")
     exit(1)
 
 FTP_HOST = os.getenv('FTP_HOST', '147.93.162.60')
@@ -23,7 +35,12 @@ FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
 FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
 FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-KANAŁ_TESTOWY_ID = 1469089759958663403      # ← WPISZ PRAWDZIWE ID KANAŁU TESTOWEGO !!!
+# ID kanałów – ZMIEŃ NA SWOJE PRAWDZIWE
+KANAL_TESTOWY_ID = 1469089759958663403     # ← test / debug / niepasujące
+KANAL_AIRDROP_ID = 1469089759958663403
+KANAL_MISJE_ID   = 1469089759958663403
+KANAL_RAIDING_ID = 1469089759958663403
+KANAL_POJAZDY_ID = 1469089759958663403
 
 PLIK_STANU = 'stan.txt'
 
@@ -32,7 +49,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Flask – wymagany dla Web Service na Render
+# Flask – wymagany dla Web Service
 from flask import Flask
 flask_app = Flask(__name__)
 
@@ -49,48 +66,59 @@ def run_flask():
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 # ==================================================
-# BOT – PARSING
+# KOLORY EMBEDÓW NA DISCORD + ANSI w logach
+# ==================================================
+
+KOLOR_AIRDROP  = 0xFFAA00   # pomarańczowy
+KOLOR_MISJE    = 0x00AAFF   # jasnoniebieski
+KOLOR_RAIDING  = 0xFF0000   # czerwony
+KOLOR_POJAZDY  = 0x00FF88   # jasnozielony
+KOLOR_TEST     = 0xAAAAAA   # szary
+
+ANSI_AIRDROP  = ANSI.YELLOW
+ANSI_MISJE    = ANSI.BLUE
+ANSI_RAIDING  = ANSI.RED
+ANSI_POJAZDY  = ANSI.GREEN
+ANSI_TEST     = ANSI.WHITE
+ANSI_ERROR    = ANSI.RED
+ANSI_INFO     = ANSI.CYAN
+
+# ==================================================
+# BOT
 # ==================================================
 
 @bot.event
 async def on_ready():
     teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{teraz}] BOT URUCHOMIONY – on_ready wywołane")
+    print(f"{ANSI_INFO}[{teraz}] BOT URUCHOMIONY – on_ready OK{ANSI.RESET}")
 
-    # Usuwamy stan – wymuszamy odczyt całego pliku
+    # Usuwamy stan – odczyt całego najnowszego logu
     if os.path.exists(PLIK_STANU):
         os.remove(PLIK_STANU)
-        print("Usunięto stan.txt → odczyt CAŁEGO najnowszego logu")
+        print(f"{ANSI.YELLOW}Usunięto stan.txt → odczyt CAŁEGO najnowszego logu{ANSI.RESET}")
 
     # Komunikat startowy
-    kanal = bot.get_channel(KANAŁ_TESTOWY_ID)
-    if kanal:
-        try:
-            await kanal.send(
-                f"🟢 **BOT RESTART / DEPLOY** {teraz}\n"
-                f"• Zalogowano jako {bot.user}\n"
-                f"• Usunięto stan → odczyt całego najnowszego logu\n"
-                f"• Wszystkie linie idą tutaj (test)\n"
-                f"• Sprawdzanie co 60 s"
-            )
-            print("Wysłano komunikat startowy")
-        except Exception as e:
-            print(f"Błąd wysyłania startowego: {e}")
-    else:
-        print(f"Nie znaleziono kanału testowego {KANAŁ_TESTOWY_ID}")
+    kanal_test = bot.get_channel(KANAL_TESTOWY_ID)
+    if kanal_test:
+        embed = discord.Embed(
+            title="🟢 Bot HusariaEXAPL wystartował",
+            description=f"Data: {teraz}\nOdczyt całego najnowszego logu przy starcie\nLinie rozdzielane na kanały wg kategorii",
+            color=0x00FF00
+        )
+        embed.set_footer(text="Sprawdzanie co 60 sekund")
+        await kanal_test.send(embed=embed)
+        print(f"{ANSI.GREEN}Wysłano komunikat startowy{ANSI.RESET}")
 
-    # Natychmiastowe pierwsze sprawdzenie
-    print("Natychmiastowe odczytanie najnowszego logu...")
+    print(f"{ANSI.CYAN}Pierwsze sprawdzenie logów – zaraz...{ANSI.RESET}")
     await sprawdz_logi()
 
     if not sprawdz_logi.is_running():
         sprawdz_logi.start()
-        print("Pętla sprawdz_logi uruchomiona")
 
 @tasks.loop(seconds=60)
 async def sprawdz_logi():
     teraz = datetime.now().strftime("%H:%M:%S")
-    print(f"[{teraz}] === START sprawdzania FTP ===")
+    print(f"{ANSI.CYAN}[{teraz}] === START sprawdzania FTP ==={ANSI.RESET}")
 
     try:
         ftp = ftplib.FTP()
@@ -98,40 +126,34 @@ async def sprawdz_logi():
         ftp.login(FTP_USER, FTP_PASS)
         ftp.cwd(FTP_LOG_DIR)
 
-        # Lista plików – używamy LIST zamiast nlst() dla lepszej kompatybilności
-        pliki = []
-        ftp.retrlines('LIST', lambda line: pliki.append(line.split()[-1]))
-        pliki_log = [f for f in pliki if f.startswith('ExpLog_') and f.endswith('.log')]
-
-        if not pliki_log:
-            print("Brak plików ExpLog_* na FTP")
+        pliki = [f for f in ftp.nlst() if f.startswith('ExpLog_') and f.endswith('.log')]
+        if not pliki:
+            print(f"{ANSI.RED}Brak plików ExpLog_*{ANSI.RESET}")
             ftp.quit()
             return
 
-        # Najnowszy plik
-        def parse_data(f):
+        def parse_date(f):
             try:
                 return datetime.strptime(f.split('ExpLog_')[1].split('.log')[0], '%Y-%m-%d_%H-%M-%S')
             except:
                 return datetime.min
 
-        pliki_log.sort(key=parse_data, reverse=True)
-        najnowszy = pliki_log[0]
-        print(f"Najnowszy plik: {najnowszy}")
+        pliki.sort(key=parse_date, reverse=True)
+        najnowszy = pliki[0]
+        print(f"{ANSI.YELLOW}Najnowszy plik: {najnowszy}{ANSI.RESET}")
 
-        # Stan (po usunięciu będzie pusty → odczyt całego pliku)
+        # Stan
         ostatni_plik = ''
         ostatnia_linia = 0
         if os.path.exists(PLIK_STANU):
             with open(PLIK_STANU, 'r', encoding='utf-8') as f:
-                linie = f.readlines()
-                if len(linie) >= 2:
-                    ostatni_plik = linie[0].strip()
-                    ostatnia_linia = int(linie[1].strip())
+                dane = f.read().strip().split('\n')
+                if len(dane) >= 2:
+                    ostatni_plik = dane[0]
+                    ostatnia_linia = int(dane[1])
 
-        print(f"Stan: plik={ostatni_plik}, linia={ostatnia_linia}")
+        print(f"{ANSI.WHITE}Stan: plik={ostatni_plik}, linia={ostatnia_linia}{ANSI.RESET}")
 
-        # Pobierz zawartość
         buf = io.BytesIO()
         ftp.retrbinary(f'RETR {najnowszy}', buf.write)
         ftp.quit()
@@ -139,45 +161,71 @@ async def sprawdz_logi():
         tekst = buf.read().decode('utf-8', errors='ignore')
         linie = tekst.splitlines()
 
-        print(f"Całkowita liczba linii w pliku: {len(linie)}")
+        print(f"{ANSI.CYAN}Całkowita liczba linii w pliku: {len(linie)}{ANSI.RESET}")
 
-        # Przy braku stanu → bierzemy WSZYSTKO
         nowe_linje = linie if najnowszy != ostatni_plik else linie[ostatnia_linia:]
-        print(f"Liczba linii do wysłania: {len(nowe_linje)}")
+        print(f"{ANSI.YELLOW}Nowe linie do przetworzenia: {len(nowe_linje)}{ANSI.RESET}")
 
         if nowe_linje:
-            kanal = bot.get_channel(KANAŁ_TESTOWY_ID)
-            if kanal:
-                print(f"Wysyłam {len(nowe_linje)} linii na kanał testowy...")
-                chunk_size = 8  # małe paczki – bezpieczniej przy długich logach
-                for i in range(0, len(nowe_linje), chunk_size):
-                    part = nowe_linje[i:i+chunk_size]
-                    msg = f"**Linie z {najnowszy} – część {i//chunk_size + 1}**\n```log\n"
-                    msg += "\n".join(part)
-                    msg += "\n```"
-                    if len(msg) > 1950:
-                        msg = msg[:1950] + "\n... (zbyt długie)"
-                    try:
-                        await kanal.send(msg)
-                        print(f"Wysłano chunk {i//chunk_size + 1} ({len(part)} linii)")
-                    except Exception as send_err:
-                        print(f"Błąd wysyłania chunk {i//chunk_size + 1}: {send_err}")
-                    await asyncio.sleep(1.8)  # ochrona przed rate-limit
+            # Słownik: kategoria → (kanał, kolor_embed, ansi_kolor, nazwa)
+            kategorie = {
+                'airdrop':  (bot.get_channel(KANAL_AIRDROP_ID),  KOLOR_AIRDROP,  ANSI_AIRDROP,  "Airdrop"),
+                'misje':    (bot.get_channel(KANAL_MISJE_ID),    KOLOR_MISJE,    ANSI_MISJE,    "Misje / Quests"),
+                'raiding':  (bot.get_channel(KANAL_RAIDING_ID),  KOLOR_RAIDING,  ANSI_RAIDING,  "Raiding / Bazy"),
+                'pojazdy':  (bot.get_channel(KANAL_POJAZDY_ID),  KOLOR_POJAZDY,  ANSI_POJAZDY,  "Pojazdy"),
+                'test':     (bot.get_channel(KANAL_TESTOWY_ID),  KOLOR_TEST,     ANSI_TEST,     "Inne / Test")
+            }
 
-            # Zapisz stan po wysłaniu
+            wysłane = 0
+            for linia in nowe_linje:
+                kategoria = 'test'
+
+                # Przypisanie kategorii
+                if '[MissionAirdrop]' in linia:
+                    kategoria = 'airdrop'
+                elif '[Expansion Quests]' in linia:
+                    kategoria = 'misje'
+                elif '[BaseRaiding]' in linia:
+                    kategoria = 'raiding'
+                elif any(x in linia for x in ['[Vehicle', 'VehicleDeleted', 'VehicleEnter', 'VehicleLeave', 'VehicleEngine', 'VehicleCarKey']):
+                    kategoria = 'pojazdy'
+
+                kanal, kolor_embed, ansi_kolor, nazwa = kategorie[kategoria]
+
+                if kanal:
+                    embed = discord.Embed(
+                        description=f"```log\n{linia}\n```",
+                        color=kolor_embed,
+                        timestamp=datetime.now()
+                    )
+                    embed.set_author(name=nazwa)
+                    embed.set_footer(text=f"{najnowszy} • {teraz}")
+
+                    try:
+                        await kanal.send(embed=embed)
+                        wysłane += 1
+                        print(f"{ansi_kolor}Wysłano linię do {nazwa} ({kategoria}){ANSI.RESET}")
+                    except Exception as e:
+                        print(f"{ANSI_ERROR}Błąd wysyłania do {nazwa}: {e}{ANSI.RESET}")
+                    await asyncio.sleep(0.9)  # ochrona przed rate-limit
+
+            print(f"{ANSI.GREEN}Wysłano łącznie {wysłane} linii{ANSI.RESET}")
+
+            # Zapisz stan
             with open(PLIK_STANU, 'w', encoding='utf-8') as f:
                 f.write(f"{najnowszy}\n{len(linie)}\n")
-            print("Stan zapisany")
-        else:
-            print("Brak nowych linii do wysłania")
+            print(f"{ANSI.GREEN}Stan zapisany{ANSI.RESET}")
 
-        print("=== KONIEC sprawdzania ===\n")
+        else:
+            print(f"{ANSI.YELLOW}Brak nowych linii{ANSI.RESET}")
+
+        print(f"{ANSI.CYAN}=== KONIEC sprawdzania ==={ANSI.RESET}\n")
 
     except Exception as e:
-        print(f"Błąd w sprawdz_logi: {type(e).__name__} → {e}")
+        print(f"{ANSI.RED}Błąd sprawdzania: {type(e).__name__} → {e}{ANSI.RESET}")
 
 if __name__ == '__main__':
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
-    print(f"Flask nasłuchuje na porcie {os.getenv('PORT', 10000)}")
+    print(f"{ANSI.CYAN}Flask nasłuchuje na porcie {os.getenv('PORT', 10000)}{ANSI.RESET}")
     bot.run(DISCORD_TOKEN)
