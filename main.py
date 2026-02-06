@@ -21,7 +21,7 @@ class ANSI:
     WHITE    = "\033[97m"
 
 # ==================================================
-# KONFIGURACJA
+# KONFIGURACJA – Twoje ID kanałów
 # ==================================================
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
@@ -65,7 +65,7 @@ def run_flask():
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 # ==================================================
-# KOLORY
+# KOLORY EMBEDÓW NA DISCORD + ANSI w logach
 # ==================================================
 
 KOLOR_AIRDROP  = 0xFFAA00
@@ -89,7 +89,7 @@ ANSI_INFO     = ANSI.CYAN
 @bot.event
 async def on_ready():
     teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"{ANSI.INFO}{ANSI.BOLD}[{teraz}] BOT URUCHOMIONY – on_ready OK{ANSI.RESET}")
+    print(f"{ANSI_INFO}{ANSI.BOLD}[{teraz}] BOT URUCHOMIONY – on_ready OK{ANSI.RESET}")
 
     # Wymuszamy odczyt całego logu przy KAŻDYM starcie
     if os.path.exists(PLIK_STANU):
@@ -107,7 +107,7 @@ async def on_ready():
         await kanal_test.send(embed=embed)
         print(f"{ANSI.GREEN}Wysłano komunikat startowy{ANSI.RESET}")
 
-    print(f"{ANSI.CYAN}Pierwsze sprawdzenie logów – zaraz...{ANSI.RESET}")
+    print(f"{ANSI_INFO}Pierwsze sprawdzenie logów – zaraz...{ANSI.RESET}")
     await sprawdz_logi()
 
     if not sprawdz_logi.is_running():
@@ -116,7 +116,7 @@ async def on_ready():
 @tasks.loop(seconds=60)
 async def sprawdz_logi():
     teraz = datetime.now().strftime("%H:%M:%S")
-    print(f"{ANSI.CYAN}{ANSI.BOLD}[{teraz}] === START sprawdzania FTP ==={ANSI.RESET}")
+    print(f"{ANSI_INFO}{ANSI.BOLD}[{teraz}] === START sprawdzania FTP ==={ANSI.RESET}")
 
     try:
         ftp = ftplib.FTP()
@@ -140,7 +140,7 @@ async def sprawdz_logi():
         najnowszy = pliki[0]
         print(f"{ANSI.YELLOW}Najnowszy plik: {najnowszy}{ANSI.RESET}")
 
-        # Stan (ale po usunięciu będzie pusty → cały plik)
+        # Stan
         ostatni_plik = ''
         ostatnia_linia = 0
         if os.path.exists(PLIK_STANU):
