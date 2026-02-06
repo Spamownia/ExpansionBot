@@ -1,130 +1,209 @@
-# bot.py
+# main.py - Bot Discord do logów DayZ Expansion (Python 3.12)
 import discord
 from discord.ext import commands, tasks
 import ftplib
 import io
 import os
+import asyncio
 from datetime import datetime
+import re
 
-# Pobierz zmienne środowiskowe (ustaw w Render lub .env)
-DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
-FTP_HOST = os.getenv('FTP_HOST')
-FTP_PORT = int(os.getenv('FTP_PORT', 21))  # Domyślnie 21, ale podano 51421
-FTP_USER = os.getenv('FTP_USER')
-FTP_PASS = os.getenv('FTP_PASS')
-FTP_LOG_DIR = os.getenv('FTP_LOG_DIR')
+# KONFIGURACJA - TYLKO TE 2 ZMIENNE W ENV NA RENDERZE!
+DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')  # Twój token
+FTP_HOST = os.getenv('FTP_HOST', '147.93.162.60')
+FTP_PORT = int(os.getenv('FTP_PORT', '51421'))
+FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
+FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
+FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-# ID kanałów dla różnych typów logów - ustaw w env variables na Render
-CHANNELS = {
-    'vehicle': int(os.getenv('VEHICLE_CHANNEL_ID', 0)),  # Dla [Vehicle...
-    'kill': int(os.getenv('KILL_CHANNEL_ID', 0)),        # Dla [Kill] (jeśli istnieją)
-    'quests': int(os.getenv('QUESTS_CHANNEL_ID', 0)),    # Dla [Expansion Quests]
-    'market': int(os.getenv('MARKET_CHANNEL_ID', 0)),    # Dla [Market]
-    'safezone': int(os.getenv('SAFEZONE_CHANNEL_ID', 0)),# Dla [Safezone]
-    'ai': int(os.getenv('AI_CHANNEL_ID', 0)),            # Dla [AI ...
-    'airdrop': int(os.getenv('AIRDROP_CHANNEL_ID', 0)),  # Dla [MissionAirdrop]
-    # Dodaj więcej jeśli potrzeba, np. 'baseraiding': int(os.getenv('BASERAIDING_CHANNEL_ID', 0)),
-    # 'chat': int(os.getenv('CHAT_CHANNEL_ID', 0)),
+# ID KANAŁÓW DISCORD - ZMIEN TUTAJ SWOJE ID KANAŁÓW!
+# (Prawy przycisk na kanale Discord → Kopiuj ID, włącz Developer Mode w Discord Settings)
+KANAL_POJAZDY_ID = 1469089759958663403  # #log-pojazdy
+KANAL_MISJE_ID = 1469089759958663403    # #log-misje  
+KANAL_RYNEK_ID = 1469089759958663403    # #log-rynek
+KANAL_STREFA_ID = 1469089759958663403   # #log-strefa
+KANAL_AI_ID = 1469089759958663403       # #log-ai
+KANAL_AIRDROP_ID = 1469089759958663403  # #log-airdrop
+KANAL_RAIDING_ID = 1469089759958663403  # #log-raiding
+KANAL_ZABICIA_ID = 1469089759958663403  # #log-kills (jeśli masz kill logi)
+KANAL_CZAT_ID = 1469089759958663403     # #log-czat
+
+# Kanały w słowniku
+KANAŁY = {
+    'pojazd': KANAL_POJAZDY_ID,
+    'misje': KANAL_MISJE_ID,
+    'rynek': KANAL_RYNEK_ID,
+    'strefa': KANAL_STREFA_ID,
+    'ai': KANAL_AI_ID,
+    'airdrop': KANAL_AIRDROP_ID,
+    'raiding': KANAL_RAIDING_ID,
+    'zabicie': KANAL_ZABICIA_ID,
+    'czat': KANAL_CZAT_ID
 }
 
-# Stan: śledzenie ostatniego przetworzonego pliku i linii
-STATE_FILE = 'state.txt'
+# Plik stanu
+PLIK_STANU = 'stan.txt'
 
-bot = commands.Bot(command_prefix='!', intents=discord.Intents.default())
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='!', intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f'Bot is ready as {bot.user}')
-    check_logs.start()
+    print(f'🚀 Bot wystartował jako {bot.user} | Sprawdzam logi co 5 min...')
+    if not sprawdz_logi.is_running():
+        sprawdz_logi.start()
+    print(f'📡 Połączono z kanałami: {len([ch for ch in KANAŁY.values() if ch != 1234567890123456789])} aktywnych')
 
-@tasks.loop(minutes=5)  # Sprawdza co 5 minut
-async def check_logs():
+@tasks.loop(minutes=5)
+async def sprawdz_logi():
     try:
-        # Połącz z FTP
+        print('🔄 Sprawdzam nowe logi...')
+        
+        # Połączenie FTP
         ftp = ftplib.FTP()
         ftp.connect(FTP_HOST, FTP_PORT)
         ftp.login(FTP_USER, FTP_PASS)
         ftp.cwd(FTP_LOG_DIR)
 
-        # Pobierz listę plików
-        files = [f for f in ftp.nlst() if f.startswith('ExpLog_') and f.endswith('.log')]
+        # Lista plików logów
+        pliki = []
+        ftp.retrlines('LIST', lambda x: pliki.append(x.split()[-1]) if 'ExpLog_' in x else None)
+        pliki_log = [f for f in pliki if f.startswith('ExpLog_') and f.endswith('.log')]
 
-        if not files:
-            print('No log files found.')
+        if not pliki_log:
+            print('❌ Brak plików logów')
             ftp.quit()
             return
 
-        # Sortuj pliki po dacie
-        def parse_date(filename):
-            date_str = filename.split('ExpLog_')[1].split('.log')[0]
-            return datetime.strptime(date_str, '%Y-%m-%d_%H-%M-%S')
+        # Najnowszy plik
+        def data_pliku(nazwa):
+            try:
+                data_str = nazwa.split('ExpLog_')[1].split('.log')[0]
+                return datetime.strptime(data_str, '%Y-%m-%d_%H-%M-%S')
+            except:
+                return datetime.min
 
-        files.sort(key=parse_date, reverse=True)
-        latest_log = files[0]
+        pliki_log.sort(key=data_pliku, reverse=True)
+        najnowszy_log = pliki_log[0]
+        print(f'📄 Znaleziono: {najnowszy_log}')
 
-        # Wczytaj stan
-        last_file = ''
-        last_line_num = 0
-        if os.path.exists(STATE_FILE):
-            with open(STATE_FILE, 'r') as f:
-                lines = f.readlines()
-                if lines:
-                    last_file = lines[0].strip()
-                    last_line_num = int(lines[1].strip())
+        # Stan poprzedni
+        ostatni_plik = ''
+        ostatnia_linia = 0
+        if os.path.exists(PLIK_STANU):
+            try:
+                with open(PLIK_STANU, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                    if len(lines) >= 2:
+                        ostatni_plik = lines[0].strip()
+                        ostatnia_linia = int(lines[1].strip())
+            except:
+                pass
 
-        # Pobierz zawartość
-        content = io.BytesIO()
-        ftp.retrbinary(f'RETR {latest_log}', content.write)
-        content.seek(0)
-        log_text = content.read().decode('utf-8', errors='ignore')
-        lines = log_text.splitlines()
+        # Pobierz log
+        buffer = io.BytesIO()
+        ftp.retrbinary(f'RETR {najnowszy_log}', buffer.write)
+        buffer.seek(0)
+        tekst = buffer.read().decode('utf-8', errors='ignore')
+        linie = tekst.splitlines()
 
         # Nowe linie
-        new_lines = []
-        if latest_log != last_file:
-            new_lines = lines
-        else:
-            new_lines = lines[last_line_num:]
+        nowe_linje = linie if najnowszy_log != ostatni_plik else linie[ostatnia_linia:]
+        print(f'📊 Nowych linii: {len(nowe_linje)}')
 
-        if new_lines:
-            # Mapa keyword do typu kanału
-            keyword_to_channel = {
-                '[Vehicle': 'vehicle',
-                '[Kill': 'kill',
-                '[Expansion Quests]': 'quests',
-                '[Market]': 'market',
-                '[Safezone]': 'safezone',
-                '[AI ': 'ai',
-                '[MissionAirdrop]': 'airdrop',
-                # Dodaj więcej, np. '[BaseRaiding]': 'baseraiding',
-                # '[Chat - Admin]': 'chat',
+        if nowe_linje:
+            # Klasyfikacja i wysyłka
+            klasyfikacja = {
+                'pojazd': [],
+                'misje': [],
+                'rynek': [],
+                'strefa': [],
+                'ai': [],
+                'airdrop': [],
+                'raiding': [],
+                'zabicie': [],
+                'czat': []
             }
 
-            for line in new_lines:
-                for keyword, channel_type in keyword_to_channel.items():
-                    if keyword in line:
-                        channel_id = CHANNELS.get(channel_type, 0)
-                        if channel_id != 0:
-                            channel = bot.get_channel(channel_id)
-                            if channel:
-                                message = f'**Nowy wpis z {latest_log}:**\n{line}'
-                                if len(message) > 2000:
-                                    message = message[:1997] + '...'
-                                await channel.send(message)
-                        break  # Zakładamy, że linia pasuje tylko do jednego typu
+            for linia in nowe_linje:
+                kategoria = klasyfikuj_linie(linia)
+                if kategoria:
+                    klasyfikacja[kategoria].append(linia)
+
+            # Wyślij do kanałów
+            for kategoria, linie_kat in klasyfikacja.items():
+                if linie_kat and KANAŁY[kategoria] != 1234567890123456789:
+                    kanal = bot.get_channel(KANAŁY[kategoria])
+                    if kanal:
+                        wiadomosc = f"**📋 {kategoria.upper()} | {najnowszy_log}**\n" + '\n'.join(linie_kat[:10])
+                        if len(wiadomosc) > 2000:
+                            wiadomosc = wiadomosc[:1997] + '\n...i więcej!'
+                        
+                        try:
+                            await kanal.send(wiadomosc)
+                            print(f'✅ Wysłano {len(linie_kat)} linii do #{kategoria}')
+                        except Exception as e:
+                            print(f'❌ Błąd wysyłki do {kategoria}: {e}')
 
             # Zapisz stan
-            with open(STATE_FILE, 'w') as f:
-                f.write(latest_log + '\n')
-                f.write(str(len(lines)) + '\n')
+            with open(PLIK_STANU, 'w', encoding='utf-8') as f:
+                f.write(f'{najnowszy_log}\n{len(linie)}\n')
 
         ftp.quit()
+        print('✅ Sprawdzanie zakończone')
+
     except Exception as e:
-        print(f'Error in check_logs: {e}')
+        print(f'💥 BŁĄD: {e}')
 
-@bot.command()
-async def getlogs(ctx):
-    await check_logs()
-    await ctx.send('Sprawdzono logi.')
+def klasyfikuj_linie(linia):
+    """Klasyfikuje linię logu do odpowiedniej kategorii"""
+    linia_lower = linia.lower()
+    
+    if '[vehicle' in linia or 'vehicleenter' in linia_lower or 'vehicleleave' in linia_lower or 'vehicleengine' in linia_lower or 'vehiclecar' in linia_lower or 'vehicledeleted' in linia_lower:
+        return 'pojazd'
+    elif '[expansion quests]' in linia_lower:
+        return 'misje'
+    elif '[market]' in linia_lower:
+        return 'rynek'
+    elif '[safezone]' in linia_lower:
+        return 'strefa'
+    elif '[ai ' in linia or 'ai patrol' in linia_lower:
+        return 'ai'
+    elif '[missionairdrop]' in linia_lower:
+        return 'airdrop'
+    elif '[baseraiding]' in linia_lower:
+        return 'raiding'
+    elif '[kill' in linia:
+        return 'zabicie'
+    elif '[chat' in linia:
+        return 'czat'
+    return None
 
-bot.run(DISCORD_TOKEN)
+@bot.command(name='sprawdz')
+@commands.has_permissions(administrator=True)
+async def sprawdz_ręcznie(ctx):
+    """!sprawdz - Ręczne sprawdzenie logów (tylko admin)"""
+    await ctx.message.delete()
+    await sprawdz_logi()
+    await ctx.send('🔍 Sprawdzono logi ręcznie!', delete_after=5)
+
+@bot.command(name='status')
+async def status_bot(ctx):
+    """!status - Status bota"""
+    uptime = datetime.now() - bot.start_time if hasattr(bot, 'start_time') else 'Nieznany'
+    msg = f"🤖 **Status bota:**\nOnline: ✅\nSprawdzanie: {'✅' if sprawdz_logi.is_running() else '❌'}\nKanały: {len([ch for ch in KANAŁY.values() if ch != 1234567890123456789])}\nUptime: {uptime}"
+    await ctx.send(msg)
+
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send('⛔ Brak uprawnień!', delete_after=5)
+
+if __name__ == '__main__':
+    if not DISCORD_TOKEN:
+        print('❌ Brak DISCORD_TOKEN w zmiennych środowiskowych!')
+        exit(1)
+    
+    bot.start_time = datetime.now()
+    bot.run(DISCORD_TOKEN)
