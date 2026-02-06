@@ -1,12 +1,16 @@
-# main.py - Bot logów DayZ Expansion – TESTOWY – wysyła całe logi co 60 sekund
+# main.py - Bot logów DayZ Expansion – odczyt CAŁEGO najnowszego pliku CO 60 SEKUND
 import discord
-from discord.ext import commands, tasks     # ← poprawiony import
+from discord.ext import commands, tasks
 import ftplib
 import io
 import os
 from datetime import datetime
 import asyncio
 import threading
+
+# ==================================================
+# KONFIGURACJA – Twoje ID kanałów
+# ==================================================
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN:
@@ -19,14 +23,14 @@ FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
 FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
 FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-KANAL_TESTOWY_ID = 1469089759958663403   # ← Twój testowy kanał
+KANAL_TESTOWY_ID = 1469089759958663403
 
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Flask
+# Flask – wymagany dla Web Service
 from flask import Flask
 flask_app = Flask(__name__)
 
@@ -42,6 +46,10 @@ def run_flask():
     port = int(os.getenv('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
+# ==================================================
+# BOT
+# ==================================================
+
 @bot.event
 async def on_ready():
     teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -49,7 +57,13 @@ async def on_ready():
 
     kanal = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal:
-        await kanal.send(f"🟢 **BOT URUCHOMIONY** {teraz}\nOdczyt **całego** logu co 60 sekund")
+        embed = discord.Embed(
+            title="🟢 Bot HusariaEXAPL wystartował",
+            description=f"Data: {teraz}\nOdczyt **całego** logu co 60 sekund (tryb testowy)",
+            color=0x00FF00
+        )
+        embed.set_footer(text="Powinny przyjść linie z najnowszego logu")
+        await kanal.send(embed=embed)
         print("Wysłano komunikat startowy")
 
     await sprawdz_logi()  # pierwsze od razu
@@ -59,7 +73,7 @@ async def on_ready():
 @tasks.loop(seconds=60)
 async def sprawdz_logi():
     teraz = datetime.now().strftime("%H:%M:%S")
-    print(f"[{teraz}] Sprawdzam logi...")
+    print(f"[{teraz}] === START sprawdzania FTP – odczyt CAŁEGO pliku ===")
 
     try:
         ftp = ftplib.FTP()
@@ -69,11 +83,10 @@ async def sprawdz_logi():
 
         pliki = [f for f in ftp.nlst() if f.startswith('ExpLog_') and f.endswith('.log')]
         if not pliki:
-            print("Brak plików logów")
+            print("Brak plików ExpLog_*")
             ftp.quit()
             return
 
-        # Najnowszy plik
         def parse_date(f):
             try:
                 return datetime.strptime(f.split('ExpLog_')[1].split('.log')[0], '%Y-%m-%d_%H-%M-%S')
@@ -82,9 +95,11 @@ async def sprawdz_logi():
 
         pliki.sort(key=parse_date, reverse=True)
         najnowszy = pliki[0]
-        print(f"Najnowszy: {najnowszy}")
+        print(f"Najnowszy plik: {najnowszy}")
 
-        # Zawsze odczytujemy CAŁY plik (testowo)
+        # Zawsze odczytujemy CAŁY plik (tryb testowy – ignorujemy stan)
+        print("Tryb testowy: odczyt CAŁEGO pliku bez sprawdzania stanu")
+
         buf = io.BytesIO()
         ftp.retrbinary(f'RETR {najnowszy}', buf.write)
         ftp.quit()
@@ -99,18 +114,18 @@ async def sprawdz_logi():
             if kanal:
                 embed = discord.Embed(
                     title=f"Cały najnowszy log – {najnowszy}",
-                    description="Wysyłam **pierwsze 10 linii** (test)",
+                    description="Wysyłam **pierwsze 15 linii** (testowo)",
                     color=0xFFFF00
                 )
                 embed.add_field(
                     name="Linie",
-                    value="```log\n" + "\n".join(linie[:10]) + "\n```",
+                    value="```log\n" + "\n".join(linie[:15]) + "\n```",
                     inline=False
                 )
                 await kanal.send(embed=embed)
-                print("Wysłano 10 linii testowych")
+                print("Wysłano pierwsze 15 linii na testowy kanał")
         else:
-            print("Plik pusty")
+            print("Plik pusty lub błąd odczytu")
 
         print("=== KONIEC ===\n")
 
