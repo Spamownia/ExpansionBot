@@ -1,15 +1,16 @@
-# main.py - Bot logów DayZ – DEBUG: zawsze cały najnowszy log (bez nlst)
+# main.py - Bot logów DayZ Expansion – bezpieczne listowanie plików + odczyt całego logu
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import ftplib
 import io
 import os
 from datetime import datetime
 import asyncio
+import threading
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN:
-    print("BRAK TOKENA → STOP")
+    print("BRAK DISCORD_TOKEN → STOP")
     exit(1)
 
 FTP_HOST = os.getenv('FTP_HOST', '147.93.162.60')
@@ -25,16 +26,31 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+from flask import Flask
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def home():
+    return "Bot działa"
+
+@flask_app.route('/health')
+def health():
+    return "OK", 200
+
+def run_flask():
+    port = int(os.getenv('PORT', 10000))
+    flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+
 @bot.event
 async def on_ready():
     teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{teraz}] BOT URUCHOMIONY – on_ready")
+    print(f"[{teraz}] BOT URUCHOMIONY")
 
     kanal = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal:
         embed = discord.Embed(
             title="🟢 Bot wystartował – DEBUG FTP",
-            description=f"Data: {teraz}\nPróba odczytu FTP bez nlst()\nPowinny przyjść pierwsze 20 linii logu",
+            description=f"Data: {teraz}\nUżywam retrlines('LIST') zamiast nlst()\nPowinny przyjść pierwsze 20 linii logu",
             color=0x00FF00
         )
         embed.set_footer(text="Jeśli nic nie przyjdzie – sprawdź logi Render")
@@ -51,10 +67,10 @@ async def on_ready():
         ftp.cwd(FTP_LOG_DIR)
         print(f"Przeszedłem do katalogu: {FTP_LOG_DIR}")
 
-        # Lista plików – bezpieczna wersja bez nlst()
+        # Bezpieczne listowanie plików (bez nlst)
         pliki_raw = []
         ftp.retrlines('LIST', pliki_raw.append)
-        pliki = [line.split()[-1] for line in pliki_raw]
+        pliki = [line.split()[-1] for line in pliki_raw if line.split()[-1]]  # tylko nazwy plików
         print(f"Pliki w katalogu: {pliki}")
 
         exp_logi = [f for f in pliki if f.startswith('ExpLog_') and f.endswith('.log')]
@@ -64,7 +80,7 @@ async def on_ready():
             ftp.quit()
             return
 
-        # Najnowszy
+        # Najnowszy plik
         najnowszy = max(exp_logi, key=lambda f: datetime.strptime(f.split('ExpLog_')[1].split('.log')[0], '%Y-%m-%d_%H-%M-%S'))
         print(f"Najnowszy plik: {najnowszy}")
 
@@ -92,7 +108,7 @@ async def on_ready():
             print("Plik pusty")
 
     except Exception as e:
-        print(f"Błąd podczas odczytu FTP: {e}")
+        print(f"Błąd FTP: {e}")
         if kanal:
             await kanal.send(f"Błąd FTP: {e}")
 
