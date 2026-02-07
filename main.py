@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ Expansion – każda linia osobno na kanał z kolorami ANSI
+# main.py - Bot logów DayZ Expansion – każda linia osobno na kanał z ANSI
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -7,10 +7,6 @@ import os
 from datetime import datetime
 import asyncio
 import threading
-
-# ==================================================
-# KONFIGURACJA – Twoje ID kanałów
-# ==================================================
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN:
@@ -23,7 +19,7 @@ FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
 FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
 FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-KANAL_TESTOWY_ID = 1469089759958663403     # ← niepasujące linie + debug
+KANAL_TESTOWY_ID = 1469089759958663403     # niepasujące + debug
 KANAL_AIRDROP_ID = 1469089759958663403
 KANAL_MISJE_ID   = 1469089759958663403
 KANAL_RAIDING_ID = 1469089759958663403
@@ -34,7 +30,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Flask
+# Flask – do utrzymania Web Service
 from flask import Flask
 flask_app = Flask(__name__)
 
@@ -50,38 +46,30 @@ def run_flask():
     port = int(os.getenv('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-# ==================================================
-# ANSI KOLORY DLA WIADOMOŚCI NA DISCORD
-# ==================================================
-
-ANSI_RESET   = "\x1b[0m"
-ANSI_BOLD    = "\x1b[1m"
-ANSI_RED     = "\x1b[31m"
-ANSI_GREEN   = "\x1b[32m"
-ANSI_YELLOW  = "\x1b[33m"
-ANSI_BLUE    = "\x1b[34m"
-ANSI_MAGENTA = "\x1b[35m"
-ANSI_CYAN    = "\x1b[36m"
-ANSI_WHITE   = "\x1b[37m"
-
-# ==================================================
-# BOT
-# ==================================================
+# ANSI kolory dla wiadomości na Discord (w bloku kodu)
+ANSI_RESET   = "\\x1b[0m"
+ANSI_BOLD    = "\\x1b[1m"
+ANSI_RED     = "\\x1b[31m"
+ANSI_GREEN   = "\\x1b[32m"
+ANSI_YELLOW  = "\\x1b[33m"
+ANSI_BLUE    = "\\x1b[34m"
+ANSI_CYAN    = "\\x1b[36m"
+ANSI_WHITE   = "\\x1b[37m"
 
 @bot.event
 async def on_ready():
     teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{teraz}] BOT URUCHOMIONY")
 
-    kanal = bot.get_channel(KANAL_TESTOWY_ID)
-    if kanal:
+    kanal_test = bot.get_channel(KANAL_TESTOWY_ID)
+    if kanal_test:
         embed = discord.Embed(
-            title="🟢 Bot wystartował",
+            title="🟢 Bot HusariaEXAPL wystartował",
             description=f"Data: {teraz}\nOdczyt najnowszego logu co 60 sekund\nKażda linia osobno na odpowiedni kanał z kolorami ANSI",
             color=0x00FF00
         )
         embed.set_footer(text="Sprawdzanie co 60 sekund")
-        await kanal.send(embed=embed)
+        await kanal_test.send(embed=embed)
         print("Wysłano komunikat startowy")
 
     # Wymuszamy odczyt całego logu przy starcie
@@ -162,9 +150,7 @@ async def sprawdz_logi():
 
                 kanal = bot.get_channel(kanal_id)
                 if kanal:
-                    # Kolor ANSI + tekst w bloku kodu
-                    wiadomosc = f"```ansi
-
+                    wiadomosc = f"```ansi\n{kolor_ansi}{linia}{ANSI_RESET}\n```"
                     try:
                         await kanal.send(wiadomosc)
                         print(f"Wysłano linię do {kategoria}")
