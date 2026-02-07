@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ Expansion – odczyt CAŁEGO najnowszego logu co 60 s (test)
+# main.py - Bot logów DayZ Expansion – AGRESYWNY TEST: odczyt CAŁEGO logu co 60 s
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -47,7 +47,7 @@ def run_flask():
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 # ==================================================
-# BOT
+# BOT – AGRESYWNY PARSER
 # ==================================================
 
 @bot.event
@@ -59,10 +59,10 @@ async def on_ready():
     if kanal:
         embed = discord.Embed(
             title="🟢 Bot HusariaEXAPL wystartował",
-            description=f"Data: {teraz}\nOdczyt **całego** najnowszego logu co 60 sekund (tryb testowy)",
+            description=f"Data: {teraz}\n**TRYB TESTOWY** – odczyt CAŁEGO logu co 60 sekund\nPowinny przyjść wszystkie linie",
             color=0x00FF00
         )
-        embed.set_footer(text="Powinny przyjść wszystkie linie z najnowszego logu")
+        embed.set_footer(text="Jeśli nic nie przyjdzie – sprawdź logi Render")
         await kanal.send(embed=embed)
         print("Wysłano komunikat startowy")
 
@@ -86,9 +86,12 @@ async def sprawdz_logi():
         ftp.login(FTP_USER, FTP_PASS)
         ftp.cwd(FTP_LOG_DIR)
 
-        pliki = [f for f in ftp.nlst() if f.startswith('ExpLog_') and f.endswith('.log')]
-        if not pliki:
-            print("Brak plików ExpLog_*")
+        pliki = []
+        ftp.retrlines('LIST', lambda line: pliki.append(line.split()[-1]))
+        pliki_log = [f for f in pliki if f.startswith('ExpLog_') and f.endswith('.log')]
+
+        if not pliki_log:
+            print("Brak plików ExpLog_* na FTP")
             ftp.quit()
             return
 
@@ -98,12 +101,12 @@ async def sprawdz_logi():
             except:
                 return datetime.min
 
-        pliki.sort(key=parse_date, reverse=True)
-        najnowszy = pliki[0]
+        pliki_log.sort(key=parse_date, reverse=True)
+        najnowszy = pliki_log[0]
         print(f"Najnowszy plik: {najnowszy}")
 
-        # Zawsze odczytujemy CAŁY plik (tryb testowy – ignorujemy stan)
-        print("Tryb testowy: odczyt CAŁEGO pliku bez stanu")
+        # Zawsze CAŁY plik – ignorujemy stan (tryb testowy)
+        print("Tryb testowy: odczyt CAŁEGO pliku bez stanu.txt")
 
         buf = io.BytesIO()
         ftp.retrbinary(f'RETR {najnowszy}', buf.write)
@@ -131,7 +134,7 @@ async def sprawdz_logi():
                     embed.set_footer(text=f"Linie {i+1}–{min(i+chunk_size, len(linie))}")
                     await kanal.send(embed=embed)
                     print(f"Wysłano paczkę {i//chunk_size + 1} ({len(part)} linii)")
-                    await asyncio.sleep(1.2)  # ochrona przed rate-limit
+                    await asyncio.sleep(1.5)  # ochrona przed rate-limit
 
                 print(f"Wysłano cały log – {len(linie)} linii")
         else:
