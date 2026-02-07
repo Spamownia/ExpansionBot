@@ -25,12 +25,10 @@ FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
 # <--- ZMIEŃ TE ID NA PRAWDZIWE NUMERY KANAŁÓW !!!
 KANAL_TESTOWY_ID = 1469089759958663403      # ← kanał na resztę / debug
-KANAL_AIRDROP_ID = 1234567890123456789      # ← ID kanału Airdrop
-KANAL_MISJE_ID   = 1234567890123456789      # ← ID kanału Misje / Quests
-KANAL_RAIDING_ID = 1234567890123456789      # ← ID kanału Raiding / Bazy
-KANAL_POJAZDY_ID = 1234567890123456789      # ← ID kanału Pojazdy
-
-PLIK_STANU = 'stan.txt'
+KANAL_AIRDROP_ID = 1469089759958663403      # ← ID kanału Airdrop
+KANAL_MISJE_ID   = 1469089759958663403      # ← ID kanału Misje / Quests
+KANAL_RAIDING_ID = 1469089759958663403      # ← ID kanału Raiding / Bazy
+KANAL_POJAZDY_ID = 1469089759958663403      # ← ID kanału Pojazdy
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -54,19 +52,17 @@ def run_flask():
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 # ==================================================
-# ANSI KOLORY (Discord wspiera w bloku ```ansi
+# ANSI KOLORY (Discord pokazuje w ```ansi
 # ==================================================
 
 ANSI_RESET   = "\\x1b[0m"
+ANSI_BOLD    = "\\x1b[1m"
 ANSI_RED     = "\\x1b[31m"
 ANSI_GREEN   = "\\x1b[32m"
 ANSI_YELLOW  = "\\x1b[33m"
 ANSI_BLUE    = "\\x1b[34m"
+ANSI_CYAN    = "\\x1b[36m"
 ANSI_WHITE   = "\\x1b[37m"
-
-# ==================================================
-# BOT
-# ==================================================
 
 @bot.event
 async def on_ready():
@@ -78,9 +74,9 @@ async def on_ready():
         await kanal_test.send(f"🟢 Bot wystartował {teraz}\nKażda linia osobno z ANSI + czasem")
         print("Wysłano komunikat startowy")
 
-    # Wymuszamy odczyt całego logu przy starcie (tylko raz – potem normalnie nowe linie)
-    if os.path.exists(PLIK_STANU):
-        os.remove(PLIK_STANU)
+    # Wymuszamy odczyt całego logu przy starcie (tylko raz)
+    if os.path.exists('stan.txt'):
+        os.remove('stan.txt')
         print("Usunięto stan.txt – wymuszony pełny odczyt przy starcie")
 
     await sprawdz_logi()
@@ -118,18 +114,6 @@ async def sprawdz_logi():
         najnowszy = pliki[0]
         print(f"Najnowszy plik: {najnowszy}")
 
-        # Odczyt stanu (jeśli istnieje)
-        ostatni_plik = ''
-        ostatnia_linia = 0
-        if os.path.exists(PLIK_STANU):
-            with open(PLIK_STANU, 'r', encoding='utf-8') as f:
-                dane = f.read().strip().split('\n')
-                if len(dane) >= 2:
-                    ostatni_plik = dane[0]
-                    ostatnia_linia = int(dane[1])
-
-        print(f"Stan: plik={ostatni_plik}, linia={ostatnia_linia}")
-
         buf = io.BytesIO()
         ftp.retrbinary(f'RETR {najnowszy}', buf.write)
         ftp.quit()
@@ -137,15 +121,10 @@ async def sprawdz_logi():
         tekst = buf.read().decode('utf-8', errors='ignore')
         linie = tekst.splitlines()
 
-        print(f"Całkowita liczba linii w pliku: {len(linie)}")
+        print(f"Liczba linii w pliku: {len(linie)}")
 
-        # Tylko nowe linie (lub wszystkie przy pierwszym uruchomieniu / zmianie pliku)
-        nowe_linje = linie if najnowszy != ostatni_plik else linie[ostatnia_linia:]
-
-        print(f"Nowe linie do wysłania: {len(nowe_linje)}")
-
-        if nowe_linje:
-            for linia in nowe_linje:
+        if linie:
+            for linia in linie:
                 # Czas + linia
                 linia_z_czasem = f"[{teraz}] {linia}"
 
@@ -184,15 +163,9 @@ async def sprawdz_logi():
                         print(f"Błąd wysyłania do {kategoria}: {e}")
                     await asyncio.sleep(0.8)  # ochrona przed rate-limit
 
-            print(f"Wysłano {len(nowe_linje)} nowych linii")
-
-            # Zapisujemy nowy stan
-            with open(PLIK_STANU, 'w', encoding='utf-8') as f:
-                f.write(f"{najnowszy}\n{len(linie)}\n")
-            print("Stan zapisany")
-
+            print(f"Wysłano wszystkie linie z pliku")
         else:
-            print("Brak nowych linii")
+            print("Plik pusty lub błąd odczytu")
 
         print("=== KONIEC ===\n")
 
