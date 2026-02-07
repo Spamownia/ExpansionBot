@@ -1,12 +1,11 @@
-# main.py - Bot logów DayZ – TEST: zawsze cały najnowszy log co 60 s
+# main.py - MINIMALNY DEBUG PARSER – tylko pokazuje czy czyta logi
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 import ftplib
 import io
 import os
 from datetime import datetime
 import asyncio
-import threading
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN:
@@ -19,80 +18,49 @@ FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
 FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
 FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-KANAL_TESTOWY_ID = 1469089759958663403   # ← Twój kanał testowy
+KANAL_TESTOWY_ID = 1469089759958663403
 
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-from flask import Flask
-flask_app = Flask(__name__)
-
-@flask_app.route('/')
-def home():
-    return "Bot działa"
-
-@flask_app.route('/health')
-def health():
-    return "OK", 200
-
-def run_flask():
-    port = int(os.getenv('PORT', 10000))
-    flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
-
 @bot.event
 async def on_ready():
     teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{teraz}] BOT URUCHOMIONY")
+    print(f"[{teraz}] BOT URUCHOMIONY – on_ready")
 
     kanal = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal:
-        embed = discord.Embed(
-            title="🟢 Bot HusariaEXAPL wystartował – TRYB TESTOWY",
-            description=f"Data: {teraz}\nOdczyt **całego najnowszego logu** co 60 sekund\nPowinny przyjść wszystkie linie w paczkach po 10",
-            color=0x00FF00
-        )
-        embed.set_footer(text="Jeśli nic nie przyjdzie – sprawdź logi Render")
-        await kanal.send(embed=embed)
+        await kanal.send(f"🟢 Bot wystartował {teraz}\nRozpoczynam debug odczytu FTP...")
         print("Wysłano komunikat startowy")
 
-    # Usuwamy stan przy starcie (wymuszamy odczyt całego pliku)
-    if os.path.exists('stan.txt'):
-        os.remove('stan.txt')
-        print("Usunięto stan.txt – wymuszony odczyt całego logu przy starcie")
-
-    await sprawdz_logi()
-    if not sprawdz_logi.is_running():
-        sprawdz_logi.start()
-
-@tasks.loop(seconds=60)
-async def sprawdz_logi():
-    teraz = datetime.now().strftime("%H:%M:%S")
-    print(f"[{teraz}] === START – odczyt CAŁEGO najnowszego pliku ===")
-
+    print("Próba połączenia FTP...")
     try:
         ftp = ftplib.FTP()
         ftp.connect(FTP_HOST, FTP_PORT)
+        print("Połączono z FTP")
         ftp.login(FTP_USER, FTP_PASS)
+        print("Zalogowano")
         ftp.cwd(FTP_LOG_DIR)
+        print(f"Przeszedłem do katalogu: {FTP_LOG_DIR}")
 
-        pliki = [f for f in ftp.nlst() if f.startswith('ExpLog_') and f.endswith('.log')]
-        if not pliki:
+        # Lista plików
+        pliki = ftp.nlst()
+        print(f"Pliki w katalogu: {pliki}")
+
+        exp_logi = [f for f in pliki if f.startswith('ExpLog_') and f.endswith('.log')]
+        if not exp_logi:
             print("Brak plików ExpLog_*")
+            await kanal.send("Brak plików ExpLog_* w katalogu")
             ftp.quit()
             return
 
-        def parse_date(f):
-            try:
-                return datetime.strptime(f.split('ExpLog_')[1].split('.log')[0], '%Y-%m-%d_%H-%M-%S')
-            except:
-                return datetime.min
-
-        pliki.sort(key=parse_date, reverse=True)
-        najnowszy = pliki[0]
+        # Najnowszy
+        najnowszy = max(exp_logi, key=lambda f: datetime.strptime(f.split('ExpLog_')[1].split('.log')[0], '%Y-%m-%d_%H-%M-%S'))
         print(f"Najnowszy plik: {najnowszy}")
 
+        # Pobieramy zawartość
         buf = io.BytesIO()
         ftp.retrbinary(f'RETR {najnowszy}', buf.write)
         ftp.quit()
@@ -103,35 +71,23 @@ async def sprawdz_logi():
         print(f"Liczba linii w pliku: {len(linie)}")
 
         if linie:
-            kanal = bot.get_channel(KANAL_TESTOWY_ID)
-            if kanal:
-                print(f"Wysyłam cały log ({len(linie)} linii) w paczkach po 10...")
-
-                chunk_size = 10
-                for i in range(0, len(linie), chunk_size):
-                    part = linie[i:i+chunk_size]
-                    embed = discord.Embed(
-                        title=f"Log {najnowszy} – część {i//chunk_size + 1}",
-                        description="```log\n" + "\n".join(part) + "\n```",
-                        color=0xFFFF00,
-                        timestamp=datetime.now()
-                    )
-                    embed.set_footer(text=f"Linie {i+1}–{min(i+chunk_size, len(linie))}")
-                    await kanal.send(embed=embed)
-                    print(f"Wysłano paczkę {i//chunk_size + 1} ({len(part)} linii)")
-                    await asyncio.sleep(1.5)  # ochrona przed rate-limit
-
-                print(f"Wysłano cały log – {len(linie)} linii")
+            pierwsze_20 = "\n".join(linie[:20])
+            embed = discord.Embed(
+                title=f"Pierwsze 20 linii z {najnowszy}",
+                description=f"```log\n{pierwsze_20}\n```",
+                color=0xFFFF00
+            )
+            await kanal.send(embed=embed)
+            print("Wysłano pierwsze 20 linii")
         else:
-            print("Plik pusty lub błąd odczytu")
-
-        print("=== KONIEC ===\n")
+            await kanal.send("Plik jest pusty")
+            print("Plik pusty")
 
     except Exception as e:
-        print(f"Błąd: {e}")
+        print(f"Błąd podczas odczytu FTP: {e}")
+        if kanal:
+            await kanal.send(f"Błąd FTP: {e}")
 
-if __name__ == '__main__':
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    print(f"Flask nasłuchuje na porcie {os.getenv('PORT', 10000)}")
-    bot.run(DISCORD_TOKEN)
+    print("=== DEBUG ZAKOŃCZONY ===")
+
+bot.run(DISCORD_TOKEN)
