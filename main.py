@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ Expansion – każda linia osobno na kanał z ANSI
+# main.py - Bot logów DayZ – każda linia osobno, kolory ANSI + czas
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -19,7 +19,7 @@ FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
 FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
 FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-KANAL_TESTOWY_ID = 1469089759958663403     # niepasujące + debug
+KANAL_TESTOWY_ID = 1469089759958663403
 KANAL_AIRDROP_ID = 1469089759958663403
 KANAL_MISJE_ID   = 1469089759958663403
 KANAL_RAIDING_ID = 1469089759958663403
@@ -30,7 +30,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Flask – do utrzymania Web Service
+# Flask
 from flask import Flask
 flask_app = Flask(__name__)
 
@@ -46,7 +46,7 @@ def run_flask():
     port = int(os.getenv('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-# ANSI kolory dla wiadomości na Discord (w bloku kodu)
+# ANSI kolory dla Discord (w bloku ansi)
 ANSI_RESET   = "\\x1b[0m"
 ANSI_BOLD    = "\\x1b[1m"
 ANSI_RED     = "\\x1b[31m"
@@ -63,19 +63,13 @@ async def on_ready():
 
     kanal_test = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal_test:
-        embed = discord.Embed(
-            title="🟢 Bot HusariaEXAPL wystartował",
-            description=f"Data: {teraz}\nOdczyt najnowszego logu co 60 sekund\nKażda linia osobno na odpowiedni kanał z kolorami ANSI",
-            color=0x00FF00
-        )
-        embed.set_footer(text="Sprawdzanie co 60 sekund")
-        await kanal_test.send(embed=embed)
+        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nTRYB: każda linia osobno z ANSI kolorami + czasem")
         print("Wysłano komunikat startowy")
 
     # Wymuszamy odczyt całego logu przy starcie
     if os.path.exists('stan.txt'):
         os.remove('stan.txt')
-        print("Usunięto stan.txt – wymuszony odczyt całego logu przy starcie")
+        print("Usunięto stan.txt – wymuszony odczyt całego logu")
 
     await sprawdz_logi()
     if not sprawdz_logi.is_running():
@@ -92,7 +86,7 @@ async def sprawdz_logi():
         ftp.login(FTP_USER, FTP_PASS)
         ftp.cwd(FTP_LOG_DIR)
 
-        # Bezpieczne listowanie plików (bez nlst)
+        # Bezpieczne listowanie plików
         pliki_raw = []
         ftp.retrlines('LIST', pliki_raw.append)
         pliki = [line.split()[-1] for line in pliki_raw if line.split()[-1]]
@@ -124,6 +118,10 @@ async def sprawdz_logi():
 
         if linie:
             for linia in linie:
+                # Czas + linia
+                linia_z_czasem = f"[{teraz}] {linia}"
+
+                # Kolor ANSI
                 kolor_ansi = ANSI_WHITE
                 kategoria = 'test'
 
@@ -150,7 +148,7 @@ async def sprawdz_logi():
 
                 kanal = bot.get_channel(kanal_id)
                 if kanal:
-                    wiadomosc = f"```ansi\n{kolor_ansi}{linia}{ANSI_RESET}\n```"
+                    wiadomosc = f"```ansi
                     try:
                         await kanal.send(wiadomosc)
                         print(f"Wysłano linię do {kategoria}")
