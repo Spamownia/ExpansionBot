@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ Expansion – każda linia osobno na kanał + tryb testowy (cały plik co 60 s)
+# main.py - Bot logów DayZ Expansion – każda linia osobno na kanał z kolorami ANSI
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -23,7 +23,7 @@ FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
 FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
 FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-KANAL_TESTOWY_ID = 1469089759958663403  # ← test / debug / niepasujące
+KANAL_TESTOWY_ID = 1469089759958663403     # ← test / debug / niepasujące
 KANAL_AIRDROP_ID = 1469089759958663403
 KANAL_MISJE_ID   = 1469089759958663403
 KANAL_RAIDING_ID = 1469089759958663403
@@ -51,14 +51,18 @@ def run_flask():
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 # ==================================================
-# KOLORY EMBEDÓW (możesz zmienić)
+# ANSI KOLORY DLA WIADOMOŚCI NA DISCORD
 # ==================================================
 
-KOLOR_AIRDROP  = 0xFFAA00  # pomarańczowy
-KOLOR_MISJE    = 0x00AAFF  # jasnoniebieski
-KOLOR_RAIDING  = 0xFF0000  # czerwony
-KOLOR_POJAZDY  = 0x00FF88  # jasnozielony
-KOLOR_TEST     = 0xAAAAAA  # szary
+ANSI_RESET   = "\x1b[0m"
+ANSI_BOLD    = "\x1b[1m"
+ANSI_RED     = "\x1b[31m"
+ANSI_GREEN   = "\x1b[32m"
+ANSI_YELLOW  = "\x1b[33m"
+ANSI_BLUE    = "\x1b[34m"
+ANSI_MAGENTA = "\x1b[35m"
+ANSI_CYAN    = "\x1b[36m"
+ANSI_WHITE   = "\x1b[37m"
 
 # ==================================================
 # BOT
@@ -73,10 +77,10 @@ async def on_ready():
     if kanal_test:
         embed = discord.Embed(
             title="🟢 Bot HusariaEXAPL wystartował",
-            description=f"Data: {teraz}\n**TRYB TESTOWY** – odczyt CAŁEGO logu co 60 sekund\nKażda linia osobno na odpowiedni kanał",
+            description=f"Data: {teraz}\nTRYB TESTOWY – odczyt CAŁEGO logu co 60 sekund\nKażda linia osobno na odpowiedni kanał z kolorami ANSI",
             color=0x00FF00
         )
-        embed.set_footer(text="Jeśli linie nie przychodzą – sprawdź logi Render")
+        embed.set_footer(text="Sprawdzanie co 60 sekund")
         await kanal_test.send(embed=embed)
         print("Wysłano komunikat startowy")
 
@@ -85,7 +89,7 @@ async def on_ready():
         os.remove('stan.txt')
         print("Usunięto stan.txt – wymuszony odczyt całego logu przy starcie")
 
-    await sprawdz_logi()  # pierwsze od razu
+    await sprawdz_logi()
     if not sprawdz_logi.is_running():
         sprawdz_logi.start()
 
@@ -130,22 +134,23 @@ async def sprawdz_logi():
 
         if linie:
             for linia in linie:
+                kolor_ansi = ANSI_WHITE
                 kategoria = 'test'
-                kolor = KOLOR_TEST
 
                 if '[MissionAirdrop]' in linia:
                     kategoria = 'airdrop'
-                    kolor = KOLOR_AIRDROP
+                    kolor_ansi = ANSI_YELLOW
                 elif '[Expansion Quests]' in linia:
                     kategoria = 'misje'
-                    kolor = KOLOR_MISJE
+                    kolor_ansi = ANSI_BLUE
                 elif '[BaseRaiding]' in linia:
                     kategoria = 'raiding'
-                    kolor = KOLOR_RAIDING
+                    kolor_ansi = ANSI_RED
                 elif any(x in linia for x in ['[Vehicle', 'VehicleDeleted', 'VehicleEnter', 'VehicleLeave', 'VehicleEngine', 'VehicleCarKey']):
                     kategoria = 'pojazdy'
-                    kolor = KOLOR_POJAZDY
+                    kolor_ansi = ANSI_GREEN
 
+                # Wybieramy ID kanału
                 kanal_id = {
                     'airdrop': KANAL_AIRDROP_ID,
                     'misje': KANAL_MISJE_ID,
@@ -156,16 +161,11 @@ async def sprawdz_logi():
 
                 kanal = bot.get_channel(kanal_id)
                 if kanal:
-                    embed = discord.Embed(
-                        description=f"```log\n{linia}\n```",
-                        color=kolor,
-                        timestamp=datetime.now()
-                    )
-                    embed.set_author(name=kategoria.capitalize())
-                    embed.set_footer(text=f"{najnowszy} • {teraz}")
+                    # Kolor ANSI + tekst w bloku kodu
+                    wiadomosc = f"```ansi\n{kolor_ansi}{linia}{ANSI_RESET}\n```"
 
                     try:
-                        await kanal.send(embed=embed)
+                        await kanal.send(wiadomosc)
                         print(f"Wysłano linię do {kategoria}")
                     except Exception as e:
                         print(f"Błąd wysyłania do {kategoria}: {e}")
