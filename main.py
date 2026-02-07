@@ -1,4 +1,4 @@
-# main.py - MINIMALNY DEBUG PARSER – tylko pokazuje czy czyta logi
+# main.py - Bot logów DayZ – DEBUG: zawsze cały najnowszy log (bez nlst)
 import discord
 from discord.ext import commands
 import ftplib
@@ -18,7 +18,7 @@ FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
 FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
 FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-KANAL_TESTOWY_ID = 1469089759958663403
+KANAL_TESTOWY_ID = 1469089759958663403   # ← Twój kanał testowy
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -32,7 +32,13 @@ async def on_ready():
 
     kanal = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal:
-        await kanal.send(f"🟢 Bot wystartował {teraz}\nRozpoczynam debug odczytu FTP...")
+        embed = discord.Embed(
+            title="🟢 Bot wystartował – DEBUG FTP",
+            description=f"Data: {teraz}\nPróba odczytu FTP bez nlst()\nPowinny przyjść pierwsze 20 linii logu",
+            color=0x00FF00
+        )
+        embed.set_footer(text="Jeśli nic nie przyjdzie – sprawdź logi Render")
+        await kanal.send(embed=embed)
         print("Wysłano komunikat startowy")
 
     print("Próba połączenia FTP...")
@@ -45,8 +51,10 @@ async def on_ready():
         ftp.cwd(FTP_LOG_DIR)
         print(f"Przeszedłem do katalogu: {FTP_LOG_DIR}")
 
-        # Lista plików
-        pliki = ftp.nlst()
+        # Lista plików – bezpieczna wersja bez nlst()
+        pliki_raw = []
+        ftp.retrlines('LIST', pliki_raw.append)
+        pliki = [line.split()[-1] for line in pliki_raw]
         print(f"Pliki w katalogu: {pliki}")
 
         exp_logi = [f for f in pliki if f.startswith('ExpLog_') and f.endswith('.log')]
