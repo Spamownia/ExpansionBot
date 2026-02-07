@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ – każda linia osobno, kolory ANSI + czas
+# main.py - Bot logów DayZ – każda linia osobno z ANSI + czasem
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -7,6 +7,10 @@ import os
 from datetime import datetime
 import asyncio
 import threading
+
+# ==================================================
+# KONFIGURACJA – ZMIEŃ ID KANAŁÓW NA RZECZYWISTE!
+# ==================================================
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN:
@@ -19,18 +23,21 @@ FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
 FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
 FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-KANAL_TESTOWY_ID = 1469089759958663403
-KANAL_AIRDROP_ID = 1469089759958663403
-KANAL_MISJE_ID   = 1469089759958663403
-KANAL_RAIDING_ID = 1469089759958663403
-KANAL_POJAZDY_ID = 1469089759958663403
+# <--- ZMIEŃ TE ID NA PRAWDZIWE NUMERY KANAŁÓW !!!
+KANAL_TESTOWY_ID = 1469089759958663403      # ← kanał na resztę / debug
+KANAL_AIRDROP_ID = 1234567890123456789      # ← ID kanału Airdrop
+KANAL_MISJE_ID   = 1234567890123456789      # ← ID kanału Misje / Quests
+KANAL_RAIDING_ID = 1234567890123456789      # ← ID kanału Raiding / Bazy
+KANAL_POJAZDY_ID = 1234567890123456789      # ← ID kanału Pojazdy
+
+PLIK_STANU = 'stan.txt'
 
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Flask
+# Flask – wymagany dla Render Web Service
 from flask import Flask
 flask_app = Flask(__name__)
 
@@ -46,15 +53,20 @@ def run_flask():
     port = int(os.getenv('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-# ANSI kolory dla Discord (w bloku ansi)
+# ==================================================
+# ANSI KOLORY (Discord wspiera w bloku ```ansi
+# ==================================================
+
 ANSI_RESET   = "\\x1b[0m"
-ANSI_BOLD    = "\\x1b[1m"
 ANSI_RED     = "\\x1b[31m"
 ANSI_GREEN   = "\\x1b[32m"
 ANSI_YELLOW  = "\\x1b[33m"
 ANSI_BLUE    = "\\x1b[34m"
-ANSI_CYAN    = "\\x1b[36m"
 ANSI_WHITE   = "\\x1b[37m"
+
+# ==================================================
+# BOT
+# ==================================================
 
 @bot.event
 async def on_ready():
@@ -63,13 +75,13 @@ async def on_ready():
 
     kanal_test = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal_test:
-        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nTRYB: każda linia osobno z ANSI kolorami + czasem")
+        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nKażda linia osobno z ANSI + czasem")
         print("Wysłano komunikat startowy")
 
-    # Wymuszamy odczyt całego logu przy starcie
-    if os.path.exists('stan.txt'):
-        os.remove('stan.txt')
-        print("Usunięto stan.txt – wymuszony odczyt całego logu")
+    # Wymuszamy odczyt całego logu przy starcie (tylko raz – potem normalnie nowe linie)
+    if os.path.exists(PLIK_STANU):
+        os.remove(PLIK_STANU)
+        print("Usunięto stan.txt – wymuszony pełny odczyt przy starcie")
 
     await sprawdz_logi()
     if not sprawdz_logi.is_running():
@@ -86,7 +98,6 @@ async def sprawdz_logi():
         ftp.login(FTP_USER, FTP_PASS)
         ftp.cwd(FTP_LOG_DIR)
 
-        # Bezpieczne listowanie plików
         pliki_raw = []
         ftp.retrlines('LIST', pliki_raw.append)
         pliki = [line.split()[-1] for line in pliki_raw if line.split()[-1]]
@@ -107,6 +118,18 @@ async def sprawdz_logi():
         najnowszy = pliki[0]
         print(f"Najnowszy plik: {najnowszy}")
 
+        # Odczyt stanu (jeśli istnieje)
+        ostatni_plik = ''
+        ostatnia_linia = 0
+        if os.path.exists(PLIK_STANU):
+            with open(PLIK_STANU, 'r', encoding='utf-8') as f:
+                dane = f.read().strip().split('\n')
+                if len(dane) >= 2:
+                    ostatni_plik = dane[0]
+                    ostatnia_linia = int(dane[1])
+
+        print(f"Stan: plik={ostatni_plik}, linia={ostatnia_linia}")
+
         buf = io.BytesIO()
         ftp.retrbinary(f'RETR {najnowszy}', buf.write)
         ftp.quit()
@@ -114,14 +137,19 @@ async def sprawdz_logi():
         tekst = buf.read().decode('utf-8', errors='ignore')
         linie = tekst.splitlines()
 
-        print(f"Liczba linii w pliku: {len(linie)}")
+        print(f"Całkowita liczba linii w pliku: {len(linie)}")
 
-        if linie:
-            for linia in linie:
+        # Tylko nowe linie (lub wszystkie przy pierwszym uruchomieniu / zmianie pliku)
+        nowe_linje = linie if najnowszy != ostatni_plik else linie[ostatnia_linia:]
+
+        print(f"Nowe linie do wysłania: {len(nowe_linje)}")
+
+        if nowe_linje:
+            for linia in nowe_linje:
                 # Czas + linia
                 linia_z_czasem = f"[{teraz}] {linia}"
 
-                # Kolor ANSI
+                # Kolor ANSI + kategoria
                 kolor_ansi = ANSI_WHITE
                 kategoria = 'test'
 
@@ -148,7 +176,7 @@ async def sprawdz_logi():
 
                 kanal = bot.get_channel(kanal_id)
                 if kanal:
-                    wiadomosc = f"```ansi
+                    wiadomosc = f"```ansi\n{kolor_ansi}{linia_z_czasem}{ANSI_RESET}\n```"
                     try:
                         await kanal.send(wiadomosc)
                         print(f"Wysłano linię do {kategoria}")
@@ -156,9 +184,15 @@ async def sprawdz_logi():
                         print(f"Błąd wysyłania do {kategoria}: {e}")
                     await asyncio.sleep(0.8)  # ochrona przed rate-limit
 
-            print(f"Wysłano wszystkie linie z pliku")
+            print(f"Wysłano {len(nowe_linje)} nowych linii")
+
+            # Zapisujemy nowy stan
+            with open(PLIK_STANU, 'w', encoding='utf-8') as f:
+                f.write(f"{najnowszy}\n{len(linie)}\n")
+            print("Stan zapisany")
+
         else:
-            print("Plik pusty lub błąd odczytu")
+            print("Brak nowych linii")
 
         print("=== KONIEC ===\n")
 
