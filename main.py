@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ Expansion – AGRESYWNY TEST: odczyt CAŁEGO logu co 60 s
+# main.py - Bot logów DayZ Expansion – każda linia osobno na kanał
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -9,7 +9,7 @@ import asyncio
 import threading
 
 # ==================================================
-# KONFIGURACJA – tylko Twój kanał testowy
+# KONFIGURACJA – Twoje ID kanałów
 # ==================================================
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
@@ -23,14 +23,19 @@ FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
 FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
 FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-KANAL_TESTOWY_ID = 1469089759958663403   # ← Twój kanał testowy
+# ID kanałów – ZMIEŃ NA SWOJE PRAWDZIWE
+KANAL_TESTOWY_ID = 1469089759958663403  # ← dla linii bez kategorii + debug
+KANAL_AIRDROP_ID = 1469089759958663403
+KANAL_MISJE_ID   = 1469089759958663403
+KANAL_RAIDING_ID = 1469089759958663403
+KANAL_POJAZDY_ID = 1469089759958663403
 
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Flask – do utrzymania usługi
+# Flask – do utrzymania Web Service
 from flask import Flask
 flask_app = Flask(__name__)
 
@@ -47,7 +52,17 @@ def run_flask():
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 # ==================================================
-# BOT – AGRESYWNY PARSER
+# KOLORY EMBEDÓW (możesz zmienić)
+# ==================================================
+
+KOLOR_AIRDROP  = 0xFFAA00  # pomarańczowy
+KOLOR_MISJE    = 0x00AAFF  # jasnoniebieski
+KOLOR_RAIDING  = 0xFF0000  # czerwony
+KOLOR_POJAZDY  = 0x00FF88  # jasnozielony
+KOLOR_TEST     = 0xAAAAAA  # szary
+
+# ==================================================
+# BOT
 # ==================================================
 
 @bot.event
@@ -55,15 +70,15 @@ async def on_ready():
     teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{teraz}] BOT URUCHOMIONY")
 
-    kanal = bot.get_channel(KANAL_TESTOWY_ID)
-    if kanal:
+    kanal_test = bot.get_channel(KANAL_TESTOWY_ID)
+    if kanal_test:
         embed = discord.Embed(
             title="🟢 Bot HusariaEXAPL wystartował",
-            description=f"Data: {teraz}\n**TRYB TESTOWY** – odczyt CAŁEGO logu co 60 sekund\nPowinny przyjść wszystkie linie",
+            description=f"Data: {teraz}\nOdczyt całego logu przy starcie\nKażda linia osobno na odpowiedni kanał",
             color=0x00FF00
         )
-        embed.set_footer(text="Jeśli nic nie przyjdzie – sprawdź logi Render")
-        await kanal.send(embed=embed)
+        embed.set_footer(text="Sprawdzanie co 60 sekund")
+        await kanal_test.send(embed=embed)
         print("Wysłano komunikat startowy")
 
     # Wymuszamy odczyt całego logu przy starcie
@@ -78,7 +93,7 @@ async def on_ready():
 @tasks.loop(seconds=60)
 async def sprawdz_logi():
     teraz = datetime.now().strftime("%H:%M:%S")
-    print(f"[{teraz}] === START – odczyt CAŁEGO najnowszego pliku ===")
+    print(f"[{teraz}] === START sprawdzania FTP ===")
 
     try:
         ftp = ftplib.FTP()
@@ -86,12 +101,9 @@ async def sprawdz_logi():
         ftp.login(FTP_USER, FTP_PASS)
         ftp.cwd(FTP_LOG_DIR)
 
-        pliki = []
-        ftp.retrlines('LIST', lambda line: pliki.append(line.split()[-1]))
-        pliki_log = [f for f in pliki if f.startswith('ExpLog_') and f.endswith('.log')]
-
-        if not pliki_log:
-            print("Brak plików ExpLog_* na FTP")
+        pliki = [f for f in ftp.nlst() if f.startswith('ExpLog_') and f.endswith('.log')]
+        if not pliki:
+            print("Brak plików ExpLog_*")
             ftp.quit()
             return
 
@@ -101,12 +113,12 @@ async def sprawdz_logi():
             except:
                 return datetime.min
 
-        pliki_log.sort(key=parse_date, reverse=True)
-        najnowszy = pliki_log[0]
+        pliki.sort(key=parse_date, reverse=True)
+        najnowszy = pliki[0]
         print(f"Najnowszy plik: {najnowszy}")
 
-        # Zawsze CAŁY plik – ignorujemy stan (tryb testowy)
-        print("Tryb testowy: odczyt CAŁEGO pliku bez stanu.txt")
+        # Zawsze CAŁY plik (tryb testowy – ignorujemy stan)
+        print("Tryb testowy: odczyt CAŁEGO pliku bez stanu")
 
         buf = io.BytesIO()
         ftp.retrbinary(f'RETR {najnowszy}', buf.write)
@@ -118,27 +130,51 @@ async def sprawdz_logi():
         print(f"Liczba linii w pliku: {len(linie)}")
 
         if linie:
-            kanal = bot.get_channel(KANAL_TESTOWY_ID)
-            if kanal:
-                print("Wysyłam cały log w paczkach po 10 linii...")
+            for linia in linie:
+                kategoria = 'test'
+                kolor = KOLOR_TEST
 
-                chunk_size = 10
-                for i in range(0, len(linie), chunk_size):
-                    part = linie[i:i+chunk_size]
+                if '[MissionAirdrop]' in linia:
+                    kategoria = 'airdrop'
+                    kolor = KOLOR_AIRDROP
+                elif '[Expansion Quests]' in linia:
+                    kategoria = 'misje'
+                    kolor = KOLOR_MISJE
+                elif '[BaseRaiding]' in linia:
+                    kategoria = 'raiding'
+                    kolor = KOLOR_RAIDING
+                elif any(x in linia for x in ['[Vehicle', 'VehicleDeleted', 'VehicleEnter', 'VehicleLeave', 'VehicleEngine', 'VehicleCarKey']):
+                    kategoria = 'pojazdy'
+                    kolor = KOLOR_POJAZDY
+
+                kanal_id = {
+                    'airdrop': KANAL_AIRDROP_ID,
+                    'misje': KANAL_MISJE_ID,
+                    'raiding': KANAL_RAIDING_ID,
+                    'pojazdy': KANAL_POJAZDY_ID,
+                    'test': KANAL_TESTOWY_ID
+                }[kategoria]
+
+                kanal = bot.get_channel(kanal_id)
+                if kanal:
                     embed = discord.Embed(
-                        title=f"Log {najnowszy} – część {i//chunk_size + 1}",
-                        description="```log\n" + "\n".join(part) + "\n```",
-                        color=0xFFFF00,
+                        description=f"```log\n{linia}\n```",
+                        color=kolor,
                         timestamp=datetime.now()
                     )
-                    embed.set_footer(text=f"Linie {i+1}–{min(i+chunk_size, len(linie))}")
-                    await kanal.send(embed=embed)
-                    print(f"Wysłano paczkę {i//chunk_size + 1} ({len(part)} linii)")
-                    await asyncio.sleep(1.5)  # ochrona przed rate-limit
+                    embed.set_author(name=kategoria.capitalize())
+                    embed.set_footer(text=f"{najnowszy} • {teraz}")
 
-                print(f"Wysłano cały log – {len(linie)} linii")
+                    try:
+                        await kanal.send(embed=embed)
+                        print(f"Wysłano linię do {kategoria}")
+                    except Exception as e:
+                        print(f"Błąd wysyłania do {kategoria}: {e}")
+                    await asyncio.sleep(0.8)  # ochrona przed rate-limit
+
+            print(f"Wysłano wszystkie linie")
         else:
-            print("Plik pusty lub błąd odczytu")
+            print("Plik pusty")
 
         print("=== KONIEC ===\n")
 
