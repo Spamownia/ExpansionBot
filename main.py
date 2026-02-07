@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ Expansion – każda linia osobno na kanał
+# main.py - Bot logów DayZ Expansion – każda linia osobno na kanał + tryb testowy (cały plik co 60 s)
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -24,7 +24,7 @@ FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
 FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
 # ID kanałów – ZMIEŃ NA SWOJE PRAWDZIWE
-KANAL_TESTOWY_ID = 1469089759958663403  # ← dla linii bez kategorii + debug
+KANAL_TESTOWY_ID = 1469089759958663403  # ← test / debug / niepasujące
 KANAL_AIRDROP_ID = 1469089759958663403
 KANAL_MISJE_ID   = 1469089759958663403
 KANAL_RAIDING_ID = 1469089759958663403
@@ -35,7 +35,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Flask – do utrzymania Web Service
+# Flask – wymagany dla Web Service
 from flask import Flask
 flask_app = Flask(__name__)
 
@@ -74,10 +74,10 @@ async def on_ready():
     if kanal_test:
         embed = discord.Embed(
             title="🟢 Bot HusariaEXAPL wystartował",
-            description=f"Data: {teraz}\nOdczyt całego logu przy starcie\nKażda linia osobno na odpowiedni kanał",
+            description=f"Data: {teraz}\n**TRYB TESTOWY** – odczyt CAŁEGO logu co 60 sekund\nKażda linia osobno na odpowiedni kanał",
             color=0x00FF00
         )
-        embed.set_footer(text="Sprawdzanie co 60 sekund")
+        embed.set_footer(text="Jeśli linie nie przychodzą – sprawdź logi Render")
         await kanal_test.send(embed=embed)
         print("Wysłano komunikat startowy")
 
@@ -93,7 +93,7 @@ async def on_ready():
 @tasks.loop(seconds=60)
 async def sprawdz_logi():
     teraz = datetime.now().strftime("%H:%M:%S")
-    print(f"[{teraz}] === START sprawdzania FTP ===")
+    print(f"[{teraz}] === START sprawdzania FTP – TRYB TESTOWY (cały plik) ===")
 
     try:
         ftp = ftplib.FTP()
@@ -117,8 +117,8 @@ async def sprawdz_logi():
         najnowszy = pliki[0]
         print(f"Najnowszy plik: {najnowszy}")
 
-        # Zawsze CAŁY plik (tryb testowy – ignorujemy stan)
-        print("Tryb testowy: odczyt CAŁEGO pliku bez stanu")
+        # Zawsze CAŁY plik – ignorujemy stan.txt (tryb testowy)
+        print("Tryb testowy: odczyt CAŁEGO pliku bez stanu.txt")
 
         buf = io.BytesIO()
         ftp.retrbinary(f'RETR {najnowszy}', buf.write)
@@ -172,9 +172,9 @@ async def sprawdz_logi():
                         print(f"Błąd wysyłania do {kategoria}: {e}")
                     await asyncio.sleep(0.8)  # ochrona przed rate-limit
 
-            print(f"Wysłano wszystkie linie")
+            print(f"Wysłano wszystkie linie z pliku")
         else:
-            print("Plik pusty")
+            print("Plik pusty lub błąd odczytu")
 
         print("=== KONIEC ===\n")
 
