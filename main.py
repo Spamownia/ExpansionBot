@@ -49,13 +49,18 @@ async def on_ready():
     kanal = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal:
         embed = discord.Embed(
-            title="🟢 Bot wystartował – TRYB TESTOWY",
+            title="🟢 Bot HusariaEXAPL wystartował – TRYB TESTOWY",
             description=f"Data: {teraz}\nOdczyt **całego najnowszego logu** co 60 sekund\nPowinny przyjść wszystkie linie w paczkach po 10",
             color=0x00FF00
         )
-        embed.set_footer(text="Jeśli nic nie przyjdzie → sprawdź logi Render")
+        embed.set_footer(text="Jeśli nic nie przyjdzie – sprawdź logi Render")
         await kanal.send(embed=embed)
         print("Wysłano komunikat startowy")
+
+    # Usuwamy stan przy starcie (wymuszamy odczyt całego pliku)
+    if os.path.exists('stan.txt'):
+        os.remove('stan.txt')
+        print("Usunięto stan.txt – wymuszony odczyt całego logu przy starcie")
 
     await sprawdz_logi()
     if not sprawdz_logi.is_running():
