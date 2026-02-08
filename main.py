@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ – czysty tekst z ANSI + emoji + kolory per kategoria
+# main.py - Bot logów DayZ – czysty tekst z ANSI + emoji + data i godzina_z_loga przed emoji
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 import asyncio
 import threading
+import re
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN:
@@ -51,7 +52,7 @@ ANSI_RED    = "\x1b[31m"
 ANSI_GREEN  = "\x1b[32m"
 ANSI_YELLOW = "\x1b[33m"
 ANSI_BLUE   = "\x1b[34m"
-ANSI_WHITE  = "\x1b[37m"
+ANSI_WHITE  = "\x1b[37m"   # dla test / default / AI
 
 @bot.event
 async def on_ready():
@@ -59,7 +60,7 @@ async def on_ready():
     print(f"[{teraz}] BOT URUCHOMIONY")
     kanal_test = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal_test:
-        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nemoji . treść loga")
+        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nData godzina_z_loga emoji . treść (bez wewnętrznej godziny)")
         print("Wysłano komunikat startowy")
     if os.path.exists('stan.txt'):
         os.remove('stan.txt')
@@ -108,11 +109,9 @@ async def sprawdz_logi():
 
         if linie:
             for linia in linie:
-                # Parsujemy godzinę zdarzenia z loga (tylko do wyświetlenia w konsoli jeśli chcesz)
-                if len(linia) >= 8 and linia[2] == ':' and linia[5] == ':':
-                    godzina_z_loga = linia[:8]
-                else:
-                    godzina_z_loga = "--:--:--"
+                # Wyciągamy godzinę zdarzenia z początku linii loga
+                match = re.match(r'^(\d{2}:\d{2}:\d{2}\.\d{3})', linia.strip())
+                godzina_z_loga = match.group(1) if match else "--:--:--.---"
 
                 # Emoji i kolor kategorii
                 emoji_kategorii = "⬜"
@@ -135,9 +134,15 @@ async def sprawdz_logi():
                     kategoria = 'pojazdy'
                     emoji_kategorii = "🟢"
                     kolor = ANSI_GREEN
+                # AI patrol – biały / szary
+                elif '[AI Object Patrol' in linia:
+                    kolor = ANSI_WHITE
 
-                # Format: emoji . treść loga
-                wiadomosc = f"{kolor}{emoji_kategorii} . {linia}{ANSI_RESET}"
+                # Usuwamy wewnętrzną godzinę z treści (pierwsze 13 znaków ≈ HH:MM:SS.sss + spacja)
+                clean_tresc = re.sub(r'^\d{2}:\d{2}:\d{2}\.\d{3}\s*', '', linia.strip())
+
+                # Format:   2025-10-12 13:46:41.992   🟢   .   treść bez godziny
+                wiadomosc = f"{datetime.now().strftime('%Y-%m-%d')} {godzina_z_loga} {kolor}{emoji_kategorii} . {clean_tresc}{ANSI_RESET}"
 
                 kanal_id = {
                     'airdrop':  KANAL_AIRDROP_ID,
