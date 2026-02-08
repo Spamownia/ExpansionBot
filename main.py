@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ – czysty tekst z ANSI + emoji kategorii po dacie i godzinie
+# main.py - Bot logów DayZ – czysty tekst z ANSI + emoji + kolory per kategoria
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -21,13 +21,12 @@ FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
 KANAL_TESTOWY_ID = 1469089759958663403
 KANAL_AIRDROP_ID = 1469089759958663403
-KANAL_MISJE_ID   = 1469089759958663403
+KANAL_MISJE_ID  = 1469089759958663403
 KANAL_RAIDING_ID = 1469089759958663403
 KANAL_POJAZDY_ID = 1469089759958663403
 
 intents = discord.Intents.default()
 intents.message_content = True
-
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 # Flask
@@ -46,28 +45,25 @@ def run_flask():
     port = int(os.getenv('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-# ANSI kolory (surowe escape'y – Discord pokazuje w ```ansi
-ANSI_RESET   = "\x1b[0m"
-ANSI_RED     = "\x1b[31m"
-ANSI_GREEN   = "\x1b[32m"
-ANSI_YELLOW  = "\x1b[33m"
-ANSI_BLUE    = "\x1b[34m"
-ANSI_WHITE   = "\x1b[37m"
+# ANSI kolory
+ANSI_RESET  = "\x1b[0m"
+ANSI_RED    = "\x1b[31m"
+ANSI_GREEN  = "\x1b[32m"
+ANSI_YELLOW = "\x1b[33m"
+ANSI_BLUE   = "\x1b[34m"
+ANSI_WHITE  = "\x1b[37m"
 
 @bot.event
 async def on_ready():
     teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{teraz}] BOT URUCHOMIONY")
-
     kanal_test = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal_test:
-        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nData godzina_z_loga emoji treść loga")
+        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nemoji . treść loga")
         print("Wysłano komunikat startowy")
-
     if os.path.exists('stan.txt'):
         os.remove('stan.txt')
         print("Usunięto stan.txt – wymuszony odczyt całego logu")
-
     await sprawdz_logi()
     if not sprawdz_logi.is_running():
         sprawdz_logi.start()
@@ -75,7 +71,6 @@ async def on_ready():
 @tasks.loop(seconds=60)
 async def sprawdz_logi():
     print(f"[{datetime.now().strftime('%H:%M:%S')}] === START sprawdzania FTP ===")
-
     try:
         ftp = ftplib.FTP()
         ftp.connect(FTP_HOST, FTP_PORT)
@@ -113,38 +108,43 @@ async def sprawdz_logi():
 
         if linie:
             for linia in linie:
-                # Parsujemy godzinę zdarzenia z loga (HH:MM:SS)
+                # Parsujemy godzinę zdarzenia z loga (tylko do wyświetlenia w konsoli jeśli chcesz)
                 if len(linia) >= 8 and linia[2] == ':' and linia[5] == ':':
                     godzina_z_loga = linia[:8]
                 else:
                     godzina_z_loga = "--:--:--"
 
-                # Emoji kategorii
+                # Emoji i kolor kategorii
                 emoji_kategorii = "⬜"
+                kolor = ANSI_WHITE
                 kategoria = 'test'
 
                 if '[MissionAirdrop]' in linia:
                     kategoria = 'airdrop'
                     emoji_kategorii = "🟡"
+                    kolor = ANSI_YELLOW
                 elif '[Expansion Quests]' in linia:
                     kategoria = 'misje'
                     emoji_kategorii = "🔵"
+                    kolor = ANSI_BLUE
                 elif '[BaseRaiding]' in linia:
                     kategoria = 'raiding'
                     emoji_kategorii = "🔴"
+                    kolor = ANSI_RED
                 elif any(x in linia for x in ['[Vehicle', 'VehicleDeleted', 'VehicleEnter', 'VehicleLeave', 'VehicleEngine', 'VehicleCarKey']):
                     kategoria = 'pojazdy'
                     emoji_kategorii = "🟢"
+                    kolor = ANSI_GREEN
 
-                # Format: Data godzina_z_loga emoji treść loga
-                wiadomosc = f"{datetime.now().strftime('%Y-%m-%d')} {godzina_z_loga} {emoji_kategorii} {linia}"
+                # Format: emoji . treść loga
+                wiadomosc = f"{kolor}{emoji_kategorii} . {linia}{ANSI_RESET}"
 
                 kanal_id = {
-                    'airdrop': KANAL_AIRDROP_ID,
-                    'misje': KANAL_MISJE_ID,
-                    'raiding': KANAL_RAIDING_ID,
-                    'pojazdy': KANAL_POJAZDY_ID,
-                    'test': KANAL_TESTOWY_ID
+                    'airdrop':  KANAL_AIRDROP_ID,
+                    'misje':    KANAL_MISJE_ID,
+                    'raiding':  KANAL_RAIDING_ID,
+                    'pojazdy':  KANAL_POJAZDY_ID,
+                    'test':     KANAL_TESTOWY_ID
                 }[kategoria]
 
                 kanal = bot.get_channel(kanal_id)
@@ -157,6 +157,7 @@ async def sprawdz_logi():
                     await asyncio.sleep(0.8)
 
             print(f"Wysłano wszystkie linie z pliku")
+
         else:
             print("Plik pusty lub błąd odczytu")
 
