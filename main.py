@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ – ANSI kolory W CODE BLOCKU ansi + data godzina emoji . treść
+# main.py - Bot logów DayZ – ANSI kolory w ```ansi
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -46,7 +46,7 @@ def run_flask():
     port = int(os.getenv('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-# ANSI kolory – używamy \x1b (ESC)
+# ANSI kolory
 ANSI_RESET  = "\x1b[0m"
 ANSI_RED    = "\x1b[31m"
 ANSI_GREEN  = "\x1b[32m"
@@ -58,13 +58,22 @@ ANSI_WHITE  = "\x1b[37m"
 async def on_ready():
     teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{teraz}] BOT URUCHOMIONY")
+    
     kanal_test = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal_test:
-        await kanal_test.send(f"🟢 Bot wystartował {teraz}\n```ansi
+        wiadomosc_startowa = (
+            f"🟢 Bot wystartował {teraz}\n"
+            "```ansi\n"
+            "Data godzina_z_loga emoji . treść loga (kolory powinny działać!)\n"
+            "```"
+        )
+        await kanal_test.send(wiadomosc_startowa)
         print("Wysłano komunikat startowy")
+    
     if os.path.exists('stan.txt'):
         os.remove('stan.txt')
         print("Usunięto stan.txt – wymuszony odczyt całego logu")
+    
     await sprawdz_logi()
     if not sprawdz_logi.is_running():
         sprawdz_logi.start()
@@ -109,11 +118,9 @@ async def sprawdz_logi():
 
         if linie:
             for linia in linie:
-                # Godzina z loga (początek linii)
                 match = re.match(r'^(\d{2}:\d{2}:\d{2}\.\d{3})', linia.strip())
                 godzina_z_loga = match.group(1) if match else "--:--:--.---"
 
-                # Kategoria, emoji, kolor
                 emoji_kategorii = "⬜"
                 kolor = ANSI_WHITE
                 kategoria = 'test'
@@ -135,19 +142,15 @@ async def sprawdz_logi():
                     emoji_kategorii = "🟢"
                     kolor = ANSI_GREEN
                 elif '[AI Object Patrol' in linia:
-                    kolor = ANSI_WHITE  # lub inny jeśli chcesz odróżnić
+                    kolor = ANSI_WHITE
 
-                # Treść bez początkowej godziny
                 clean_tresc = re.sub(r'^\d{2}:\d{2}:\d{2}\.\d{3}\s*', '', linia.strip())
 
-                # Cała linia w ANSI
                 tresc_kolorowa = f"{kolor}{emoji_kategorii} . {clean_tresc}{ANSI_RESET}"
 
-                # Format z datą + godziną z loga
-                cala_wiadomosc = f"{datetime.now().strftime('%Y-%m-%d')} {godzina_z_loga} {tresc_kolorowa}"
+                cala_linia = f"{datetime.now().strftime('%Y-%m-%d')} {godzina_z_loga} {tresc_kolorowa}"
 
-                # Wysyłamy jako code block ansi
-                wiadomosc_do_discorda = f"```ansi\n{cala_wiadomosc}\n```"
+                wiadomosc = f"```ansi\n{cala_linia}\n```"
 
                 kanal_id = {
                     'airdrop':  KANAL_AIRDROP_ID,
@@ -160,11 +163,11 @@ async def sprawdz_logi():
                 kanal = bot.get_channel(kanal_id)
                 if kanal:
                     try:
-                        await kanal.send(wiadomosc_do_discorda)
+                        await kanal.send(wiadomosc)
                         print(f"Wysłano linię do {kategoria}")
                     except Exception as e:
                         print(f"Błąd wysyłania do {kategoria}: {e}")
-                    await asyncio.sleep(0.8)  # rate limit safety
+                    await asyncio.sleep(0.8)
 
             print(f"Wysłano wszystkie linie z pliku")
 
