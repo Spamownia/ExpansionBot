@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ – każda linia osobno z ANSI + czasem
+# main.py - Bot logów DayZ Expansion – każda linia osobno z ANSI + czasem
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -7,10 +7,6 @@ import os
 from datetime import datetime
 import asyncio
 import threading
-
-# ==================================================
-# KONFIGURACJA – ZMIEŃ ID KANAŁÓW NA RZECZYWISTE!
-# ==================================================
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN:
@@ -23,19 +19,18 @@ FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
 FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
 FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-# <--- ZMIEŃ TE ID NA PRAWDZIWE NUMERY KANAŁÓW !!!
-KANAL_TESTOWY_ID = 1469089759958663403      # ← kanał na resztę / debug
-KANAL_AIRDROP_ID = 1469089759958663403      # ← ID kanału Airdrop
-KANAL_MISJE_ID   = 1469089759958663403      # ← ID kanału Misje / Quests
-KANAL_RAIDING_ID = 1469089759958663403      # ← ID kanału Raiding / Bazy
-KANAL_POJAZDY_ID = 1469089759958663403      # ← ID kanału Pojazdy
+KANAL_TESTOWY_ID = 1469089759958663403     # niepasujące + debug
+KANAL_AIRDROP_ID = 1469089759958663403
+KANAL_MISJE_ID   = 1469089759958663403
+KANAL_RAIDING_ID = 1469089759958663403
+KANAL_POJAZDY_ID = 1469089759958663403
 
 intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Flask – wymagany dla Render Web Service
+# Flask
 from flask import Flask
 flask_app = Flask(__name__)
 
@@ -51,18 +46,14 @@ def run_flask():
     port = int(os.getenv('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-# ==================================================
-# ANSI KOLORY (Discord pokazuje w ```ansi
-# ==================================================
-
+# ANSI kolory – poprawione escape'y dla Discord (działa w ```ansi ... ```)
 ANSI_RESET   = "\\x1b[0m"
-ANSI_BOLD    = "\\x1b[1m"
 ANSI_RED     = "\\x1b[31m"
 ANSI_GREEN   = "\\x1b[32m"
 ANSI_YELLOW  = "\\x1b[33m"
 ANSI_BLUE    = "\\x1b[34m"
-ANSI_CYAN    = "\\x1b[36m"
 ANSI_WHITE   = "\\x1b[37m"
+ANSI_BOLD    = "\\x1b[1m"
 
 @bot.event
 async def on_ready():
@@ -74,10 +65,10 @@ async def on_ready():
         await kanal_test.send(f"🟢 Bot wystartował {teraz}\nKażda linia osobno z ANSI + czasem")
         print("Wysłano komunikat startowy")
 
-    # Wymuszamy odczyt całego logu przy starcie (tylko raz)
+    # Wymuszamy odczyt całego logu przy starcie
     if os.path.exists('stan.txt'):
         os.remove('stan.txt')
-        print("Usunięto stan.txt – wymuszony pełny odczyt przy starcie")
+        print("Usunięto stan.txt – wymuszony odczyt całego logu")
 
     await sprawdz_logi()
     if not sprawdz_logi.is_running():
@@ -125,10 +116,9 @@ async def sprawdz_logi():
 
         if linie:
             for linia in linie:
-                # Czas + linia
                 linia_z_czasem = f"[{teraz}] {linia}"
 
-                # Kolor ANSI + kategoria
+                # Kolor ANSI
                 kolor_ansi = ANSI_WHITE
                 kategoria = 'test'
 
@@ -161,7 +151,7 @@ async def sprawdz_logi():
                         print(f"Wysłano linię do {kategoria}")
                     except Exception as e:
                         print(f"Błąd wysyłania do {kategoria}: {e}")
-                    await asyncio.sleep(0.8)  # ochrona przed rate-limit
+                    await asyncio.sleep(0.8)
 
             print(f"Wysłano wszystkie linie z pliku")
         else:
