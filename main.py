@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ – czysty kolorowy tekst (bez embedów)
+# main.py - Bot logów DayZ Expansion – każda linia osobno z ANSI + czasem ZDARZENIA z loga
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -7,10 +7,7 @@ import os
 from datetime import datetime
 import asyncio
 import threading
-
-# ==================================================
-# KONFIGURACJA – Zmień ID kanałów na swoje
-# ==================================================
+import re
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN:
@@ -23,7 +20,7 @@ FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
 FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
 FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-KANAL_TESTOWY_ID = 1469089759958663403     # ← niepasujące + debug
+KANAL_TESTOWY_ID = 1469089759958663403     # niepasujące + debug
 KANAL_AIRDROP_ID = 1469089759958663403
 KANAL_MISJE_ID   = 1469089759958663403
 KANAL_RAIDING_ID = 1469089759958663403
@@ -50,17 +47,14 @@ def run_flask():
     port = int(os.getenv('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-# ==================================================
-# ANSI KOLORY – poprawione dla Discorda (w ```ansi ... ```)
-# ==================================================
-
-ANSI_RESET   = "\x1b[0m"
-ANSI_BOLD    = "\x1b[1m"
-ANSI_RED     = "\x1b[31m"
-ANSI_GREEN   = "\x1b[32m"
-ANSI_YELLOW  = "\x1b[33m"
-ANSI_BLUE    = "\x1b[34m"
-ANSI_WHITE   = "\x1b[37m"
+# ANSI kolory (Discord pokazuje w ```ansi ... ```)
+ANSI_RESET   = "\\x1b[0m"
+ANSI_BOLD    = "\\x1b[1m"
+ANSI_RED     = "\\x1b[31m"
+ANSI_GREEN   = "\\x1b[32m"
+ANSI_YELLOW  = "\\x1b[33m"
+ANSI_BLUE    = "\\x1b[34m"
+ANSI_WHITE   = "\\x1b[37m"
 
 @bot.event
 async def on_ready():
@@ -69,10 +63,9 @@ async def on_ready():
 
     kanal_test = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal_test:
-        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nKażda linia osobno z kolorami ANSI + czasem")
+        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nKażda linia osobno z czasem zdarzenia z loga + ANSI")
         print("Wysłano komunikat startowy")
 
-    # Wymuszamy odczyt całego logu przy starcie
     if os.path.exists('stan.txt'):
         os.remove('stan.txt')
         print("Usunięto stan.txt – wymuszony odczyt całego logu")
@@ -83,8 +76,8 @@ async def on_ready():
 
 @tasks.loop(seconds=60)
 async def sprawdz_logi():
-    teraz = datetime.now().strftime("%H:%M:%S")
-    print(f"[{teraz}] === START sprawdzania FTP ===")
+    teraz_bota = datetime.now().strftime("%H:%M:%S")
+    print(f"[{teraz_bota}] === START sprawdzania FTP ===")
 
     try:
         ftp = ftplib.FTP()
@@ -123,8 +116,13 @@ async def sprawdz_logi():
 
         if linie:
             for linia in linie:
-                linia_z_czasem = f"[{teraz}] {linia}"
+                # Parsujemy czas zdarzenia z loga (pierwsze 8 znaków HH:MM:SS)
+                match = re.match(r'^(\d{2}:\d{2}:\d{2}\.\d{3})', linia)
+                czas_zdarzenia = match.group(1)[:8] if match else teraz_bota  # HH:MM:SS
 
+                linia_z_czasem = f"[{czas_zdarzenia}] {linia}"
+
+                # Kolor ANSI + kategoria
                 kolor_ansi = ANSI_WHITE
                 kategoria = 'test'
 
@@ -151,7 +149,6 @@ async def sprawdz_logi():
 
                 kanal = bot.get_channel(kanal_id)
                 if kanal:
-                    # Czysty tekst z ANSI w bloku kodu
                     wiadomosc = f"```ansi\n{kolor_ansi}{linia_z_czasem}{ANSI_RESET}\n```"
                     try:
                         await kanal.send(wiadomosc)
