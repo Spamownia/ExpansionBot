@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ Expansion – każda linia osobno z czasem ZDARZENIA z loga
+# main.py - Bot logów DayZ – każda linia osobno z CZASEM ZDARZENIA z loga + ANSI
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -7,7 +7,6 @@ import os
 from datetime import datetime
 import asyncio
 import threading
-import re
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN:
@@ -20,7 +19,7 @@ FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
 FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
 FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-KANAL_TESTOWY_ID = 1469089759958663403     # niepasujące + debug
+KANAL_TESTOWY_ID = 1469089759958663403
 KANAL_AIRDROP_ID = 1469089759958663403
 KANAL_MISJE_ID   = 1469089759958663403
 KANAL_RAIDING_ID = 1469089759958663403
@@ -47,14 +46,13 @@ def run_flask():
     port = int(os.getenv('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-# ANSI kolory (Discord pokazuje w ```ansi ... ```)
-ANSI_RESET   = "\\x1b[0m"
-ANSI_BOLD    = "\\x1b[1m"
-ANSI_RED     = "\\x1b[31m"
-ANSI_GREEN   = "\\x1b[32m"
-ANSI_YELLOW  = "\\x1b[33m"
-ANSI_BLUE    = "\\x1b[34m"
-ANSI_WHITE   = "\\x1b[37m"
+# ANSI kolory – surowe escape'y (Discord lubi je w ```ansi
+ANSI_RESET   = "\x1b[0m"
+ANSI_RED     = "\x1b[31m"
+ANSI_GREEN   = "\x1b[32m"
+ANSI_YELLOW  = "\x1b[33m"
+ANSI_BLUE    = "\x1b[34m"
+ANSI_WHITE   = "\x1b[37m"
 
 @bot.event
 async def on_ready():
@@ -63,7 +61,7 @@ async def on_ready():
 
     kanal_test = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal_test:
-        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nKażda linia z czasem zdarzenia z loga (HH:MM:SS) + ANSI")
+        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nCzas zdarzenia z loga + kolory ANSI")
         print("Wysłano komunikat startowy")
 
     if os.path.exists('stan.txt'):
@@ -115,9 +113,11 @@ async def sprawdz_logi():
 
         if linie:
             for linia in linie:
-                # Parsujemy czas zdarzenia z loga (pierwsze 8 znaków HH:MM:SS)
-                match = re.match(r'^(\d{2}:\d{2}:\d{2})', linia)
-                czas_zdarzenia = match.group(1) if match else "??:??:??"
+                # Parsujemy czas zdarzenia z loga (HH:MM:SS na początku linii)
+                if len(linia) >= 8 and linia[2] == ':' and linia[5] == ':':
+                    czas_zdarzenia = linia[:8]  # HH:MM:SS
+                else:
+                    czas_zdarzenia = "??:??:??"
 
                 linia_z_czasem = f"[{czas_zdarzenia}] {linia}"
 
