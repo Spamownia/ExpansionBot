@@ -46,14 +46,14 @@ def run_flask():
     port = int(os.getenv('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-# ANSI kolory – poprawione escape'y dla Discord (działa w ```ansi ... ```)
+# ANSI kolory – poprawione escape'y + bold dla lepszego kontrastu
 ANSI_RESET   = "\\x1b[0m"
-ANSI_RED     = "\\x1b[31m"
-ANSI_GREEN   = "\\x1b[32m"
-ANSI_YELLOW  = "\\x1b[33m"
-ANSI_BLUE    = "\\x1b[34m"
-ANSI_WHITE   = "\\x1b[37m"
 ANSI_BOLD    = "\\x1b[1m"
+ANSI_RED     = "\\x1b[31;1m"     # jasny czerwony + bold
+ANSI_GREEN   = "\\x1b[32;1m"     # jasny zielony + bold
+ANSI_YELLOW  = "\\x1b[33;1m"     # jasny żółty + bold
+ANSI_BLUE    = "\\x1b[34;1m"     # jasny niebieski + bold
+ANSI_WHITE   = "\\x1b[37;1m"     # jasny biały + bold
 
 @bot.event
 async def on_ready():
@@ -118,7 +118,7 @@ async def sprawdz_logi():
             for linia in linie:
                 linia_z_czasem = f"[{teraz}] {linia}"
 
-                # Kolor ANSI
+                # Kolor ANSI + kategoria
                 kolor_ansi = ANSI_WHITE
                 kategoria = 'test'
 
@@ -145,7 +145,7 @@ async def sprawdz_logi():
 
                 kanal = bot.get_channel(kanal_id)
                 if kanal:
-                    wiadomosc = f"```ansi\n{kolor_ansi}{linia_z_czasem}{ANSI_RESET}\n```"
+                    wiadomosc = f"```ansi
                     try:
                         await kanal.send(wiadomosc)
                         print(f"Wysłano linię do {kategoria}")
