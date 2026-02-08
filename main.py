@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ – ANSI kolory w ```ansi
+# main.py - Bot logów DayZ – ANSI kolory + tylko nowe linie (offset po rozmiarze pliku)
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -54,6 +54,21 @@ ANSI_YELLOW = "\x1b[33m"
 ANSI_BLUE   = "\x1b[34m"
 ANSI_WHITE  = "\x1b[37m"
 
+STATE_FILE = 'last_log_size.txt'
+
+def load_last_size():
+    if os.path.exists(STATE_FILE):
+        with open(STATE_FILE, 'r') as f:
+            try:
+                return int(f.read().strip())
+            except:
+                return 0
+    return 0
+
+def save_last_size(size):
+    with open(STATE_FILE, 'w') as f:
+        f.write(str(size))
+
 @bot.event
 async def on_ready():
     teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -70,9 +85,10 @@ async def on_ready():
         await kanal_test.send(wiadomosc_startowa)
         print("Wysłano komunikat startowy")
     
-    if os.path.exists('stan.txt'):
-        os.remove('stan.txt')
-        print("Usunięto stan.txt – wymuszony odczyt całego logu")
+    # Przy pierwszym starcie czyścimy stan, jeśli chcesz wymusić pełne odczytanie → odkomentuj
+    # if os.path.exists(STATE_FILE):
+    #     os.remove(STATE_FILE)
+    #     print("Wymuszono pełne odczytanie logów przy starcie")
     
     await sprawdz_logi()
     if not sprawdz_logi.is_running():
@@ -107,77 +123,97 @@ async def sprawdz_logi():
         najnowszy = pliki[0]
         print(f"Najnowszy plik: {najnowszy}")
 
+        # Sprawdzamy aktualny rozmiar pliku
+        ftp.sendcmd('TYPE I')  # binary mode do SIZE
+        current_size = ftp.size(najnowszy)
+        last_size = load_last_size()
+
+        if current_size <= last_size:
+            print(f"Plik się nie zmienił ({current_size} bajtów) → pomijam")
+            ftp.quit()
+            return
+
+        print(f"Plik urósł z {last_size} → {current_size} bajtów")
+
+        # Pobieramy TYLKO nowe dane (od last_size)
         buf = io.BytesIO()
-        ftp.retrbinary(f'RETR {najnowszy}', buf.write)
+        ftp.retrbinary(f'RETR {najnowszy}', buf.write, rest=last_size)
         ftp.quit()
+
         buf.seek(0)
-        tekst = buf.read().decode('utf-8', errors='ignore')
-        linie = tekst.splitlines()
+        nowe_bajty = buf.read().decode('utf-8', errors='ignore')
 
-        print(f"Liczba linii w pliku: {len(linie)}")
+        if not nowe_bajty.strip():
+            print("Brak nowych linii")
+            save_last_size(current_size)
+            return
 
-        if linie:
-            for linia in linie:
-                match = re.match(r'^(\d{2}:\d{2}:\d{2}\.\d{3})', linia.strip())
-                godzina_z_loga = match.group(1) if match else "--:--:--.---"
+        linie = nowe_bajty.splitlines()
+        print(f"Nowe linie: {len(linie)}")
 
-                emoji_kategorii = "⬜"
+        for linia in linie:
+            if not linia.strip():
+                continue
+
+            match = re.match(r'^(\d{2}:\d{2}:\d{2}\.\d{3})', linia.strip())
+            godzina_z_loga = match.group(1) if match else "--:--:--.---"
+
+            emoji_kategorii = "⬜"
+            kolor = ANSI_WHITE
+            kategoria = 'test'
+
+            if '[MissionAirdrop]' in linia:
+                kategoria = 'airdrop'
+                emoji_kategorii = "🟡"
+                kolor = ANSI_YELLOW
+            elif '[Expansion Quests]' in linia:
+                kategoria = 'misje'
+                emoji_kategorii = "🔵"
+                kolor = ANSI_BLUE
+            elif '[BaseRaiding]' in linia:
+                kategoria = 'raiding'
+                emoji_kategorii = "🔴"
+                kolor = ANSI_RED
+            elif any(x in linia for x in ['[Vehicle', 'VehicleDeleted', 'VehicleEnter', 'VehicleLeave', 'VehicleEngine', 'VehicleCarKey']):
+                kategoria = 'pojazdy'
+                emoji_kategorii = "🟢"
+                kolor = ANSI_GREEN
+            elif '[AI Object Patrol' in linia:
                 kolor = ANSI_WHITE
-                kategoria = 'test'
 
-                if '[MissionAirdrop]' in linia:
-                    kategoria = 'airdrop'
-                    emoji_kategorii = "🟡"
-                    kolor = ANSI_YELLOW
-                elif '[Expansion Quests]' in linia:
-                    kategoria = 'misje'
-                    emoji_kategorii = "🔵"
-                    kolor = ANSI_BLUE
-                elif '[BaseRaiding]' in linia:
-                    kategoria = 'raiding'
-                    emoji_kategorii = "🔴"
-                    kolor = ANSI_RED
-                elif any(x in linia for x in ['[Vehicle', 'VehicleDeleted', 'VehicleEnter', 'VehicleLeave', 'VehicleEngine', 'VehicleCarKey']):
-                    kategoria = 'pojazdy'
-                    emoji_kategorii = "🟢"
-                    kolor = ANSI_GREEN
-                elif '[AI Object Patrol' in linia:
-                    kolor = ANSI_WHITE
+            clean_tresc = re.sub(r'^\d{2}:\d{2}:\d{2}\.\d{3}\s*', '', linia.strip())
 
-                clean_tresc = re.sub(r'^\d{2}:\d{2}:\d{2}\.\d{3}\s*', '', linia.strip())
+            tresc_kolorowa = f"{kolor}{emoji_kategorii} . {clean_tresc}{ANSI_RESET}"
 
-                tresc_kolorowa = f"{kolor}{emoji_kategorii} . {clean_tresc}{ANSI_RESET}"
+            cala_linia = f"{datetime.now().strftime('%Y-%m-%d')} {godzina_z_loga} {tresc_kolorowa}"
 
-                cala_linia = f"{datetime.now().strftime('%Y-%m-%d')} {godzina_z_loga} {tresc_kolorowa}"
+            wiadomosc = f"```ansi\n{cala_linia}\n```"
 
-                wiadomosc = f"```ansi\n{cala_linia}\n```"
+            kanal_id = {
+                'airdrop':  KANAL_AIRDROP_ID,
+                'misje':    KANAL_MISJE_ID,
+                'raiding':  KANAL_RAIDING_ID,
+                'pojazdy':  KANAL_POJAZDY_ID,
+                'test':     KANAL_TESTOWY_ID
+            }[kategoria]
 
-                kanal_id = {
-                    'airdrop':  KANAL_AIRDROP_ID,
-                    'misje':    KANAL_MISJE_ID,
-                    'raiding':  KANAL_RAIDING_ID,
-                    'pojazdy':  KANAL_POJAZDY_ID,
-                    'test':     KANAL_TESTOWY_ID
-                }[kategoria]
+            kanal = bot.get_channel(kanal_id)
+            if kanal:
+                try:
+                    await kanal.send(wiadomosc)
+                    print(f"Wysłano → {kategoria}")
+                except Exception as e:
+                    print(f"Błąd wysyłania do {kategoria}: {e}")
+                await asyncio.sleep(0.8)
 
-                kanal = bot.get_channel(kanal_id)
-                if kanal:
-                    try:
-                        await kanal.send(wiadomosc)
-                        print(f"Wysłano linię do {kategoria}")
-                    except Exception as e:
-                        print(f"Błąd wysyłania do {kategoria}: {e}")
-                    await asyncio.sleep(0.8)
-
-            print(f"Wysłano wszystkie linie z pliku")
-
-        else:
-            print("Plik pusty lub błąd odczytu")
+        # Zapisujemy nowy rozmiar dopiero po udanym przetworzeniu
+        save_last_size(current_size)
+        print(f"Zapisano nowy offset: {current_size}")
 
         print("=== KONIEC ===\n")
 
     except Exception as e:
-        print(f"Błąd: {e}")
+        print(f"Błąd FTP: {e}")
 
 if __name__ == '__main__':
     flask_thread = threading.Thread(target=run_flask, daemon=True)
