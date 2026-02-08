@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ – format: Data | godzina z loga | emoji | treść loga
+# main.py - Bot logów DayZ – format: Data godzina_z_loga • treść (kolorowa kropka)
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -53,7 +53,7 @@ async def on_ready():
 
     kanal_test = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal_test:
-        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nFormat: Data | godzina z loga | emoji | treść loga")
+        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nFormat: Data godzina_z_loga • treść loga (kolorowa kropka)")
         print("Wysłano komunikat startowy")
 
     if os.path.exists('stan.txt'):
@@ -66,7 +66,6 @@ async def on_ready():
 
 @tasks.loop(seconds=60)
 async def sprawdz_logi():
-    teraz = datetime.now().strftime("%Y-%m-%d")
     print(f"[{datetime.now().strftime('%H:%M:%S')}] === START sprawdzania FTP ===")
 
     try:
@@ -106,31 +105,31 @@ async def sprawdz_logi():
 
         if linie:
             for linia in linie:
-                # Parsujemy czas zdarzenia z loga (HH:MM:SS)
+                # Parsujemy godzinę zdarzenia z loga (pierwsze 8 znaków HH:MM:SS)
                 if len(linia) >= 8 and linia[2] == ':' and linia[5] == ':':
                     godzina_z_loga = linia[:8]
                 else:
                     godzina_z_loga = "--:--:--"
 
-                # Emoji + kategoria
-                emoji = "⬜"
+                # Kropka + kategoria (kolorowa •)
+                kropka = "•"
                 kategoria = 'test'
 
                 if '[MissionAirdrop]' in linia:
                     kategoria = 'airdrop'
-                    emoji = "🟡"  # żółty
+                    kropka = "🟡•"
                 elif '[Expansion Quests]' in linia:
                     kategoria = 'misje'
-                    emoji = "🔵"  # niebieski
+                    kropka = "🔵•"
                 elif '[BaseRaiding]' in linia:
                     kategoria = 'raiding'
-                    emoji = "🔴"  # czerwony
+                    kropka = "🔴•"
                 elif any(x in linia for x in ['[Vehicle', 'VehicleDeleted', 'VehicleEnter', 'VehicleLeave', 'VehicleEngine', 'VehicleCarKey']):
                     kategoria = 'pojazdy'
-                    emoji = "🟢"  # zielony
+                    kropka = "🟢•"
 
-                # Format: Data | godzina z loga | emoji | treść loga
-                wiadomosc = f"📅 {datetime.now().strftime('%Y-%m-%d')}   ⏰ {godzina_z_loga}   {emoji} {linia}"
+                # Format: Data godzina_z_loga • treść loga
+                wiadomosc = f"{datetime.now().strftime('%Y-%m-%d')} {godzina_z_loga} {kropka} {linia}"
 
                 kanal_id = {
                     'airdrop': KANAL_AIRDROP_ID,
