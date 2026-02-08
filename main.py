@@ -22,9 +22,10 @@ FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
 KANAL_TESTOWY_ID = 1469089759958663403
 KANAL_AIRDROP_ID = 1469089759958663403
-KANAL_MISJE_ID  = 1469089759958663403
+KANAL_MISJE_ID   = 1469089759958663403
 KANAL_RAIDING_ID = 1469089759958663403
 KANAL_POJAZDY_ID = 1469089759958663403
+KANAL_AI_ID      = 1469089759958663403   # ← DODANY kanał dla AI – zmień ID na właściwe
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -52,6 +53,7 @@ ANSI_RED    = "\x1b[31m"
 ANSI_GREEN  = "\x1b[32m"
 ANSI_YELLOW = "\x1b[33m"
 ANSI_BLUE   = "\x1b[34m"
+ANSI_MAGENTA = "\x1b[35m"   # dla kategorii AI
 ANSI_WHITE  = "\x1b[37m"
 
 STATE_FILE = 'last_log_size.txt'
@@ -73,7 +75,7 @@ def save_last_size(size):
 async def on_ready():
     teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{teraz}] BOT URUCHOMIONY")
-    
+   
     kanal_test = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal_test:
         wiadomosc_startowa = (
@@ -84,12 +86,12 @@ async def on_ready():
         )
         await kanal_test.send(wiadomosc_startowa)
         print("Wysłano komunikat startowy")
-    
+   
     # Przy pierwszym starcie czyścimy stan, jeśli chcesz wymusić pełne odczytanie → odkomentuj
     # if os.path.exists(STATE_FILE):
     #     os.remove(STATE_FILE)
     #     print("Wymuszono pełne odczytanie logów przy starcie")
-    
+   
     await sprawdz_logi()
     if not sprawdz_logi.is_running():
         sprawdz_logi.start()
@@ -178,8 +180,10 @@ async def sprawdz_logi():
                 kategoria = 'pojazdy'
                 emoji_kategorii = "🟢"
                 kolor = ANSI_GREEN
-            elif '[AI Object Patrol' in linia:
-                kolor = ANSI_WHITE
+            elif '[AI' in linia:
+                kategoria = 'ai'
+                emoji_kategorii = "🟪"
+                kolor = ANSI_MAGENTA
 
             clean_tresc = re.sub(r'^\d{2}:\d{2}:\d{2}\.\d{3}\s*', '', linia.strip())
 
@@ -194,6 +198,7 @@ async def sprawdz_logi():
                 'misje':    KANAL_MISJE_ID,
                 'raiding':  KANAL_RAIDING_ID,
                 'pojazdy':  KANAL_POJAZDY_ID,
+                'ai':       KANAL_AI_ID,           # ← teraz osobny kanał
                 'test':     KANAL_TESTOWY_ID
             }[kategoria]
 
