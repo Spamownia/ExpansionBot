@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ – każda linia osobno z CZASEM ZDARZENIA z loga + ANSI
+# main.py - Bot logów DayZ – format: Data | godzina z loga | emoji | treść loga
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -46,14 +46,6 @@ def run_flask():
     port = int(os.getenv('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-# ANSI kolory – surowe escape'y (Discord lubi je w ```ansi
-ANSI_RESET   = "\x1b[0m"
-ANSI_RED     = "\x1b[31m"
-ANSI_GREEN   = "\x1b[32m"
-ANSI_YELLOW  = "\x1b[33m"
-ANSI_BLUE    = "\x1b[34m"
-ANSI_WHITE   = "\x1b[37m"
-
 @bot.event
 async def on_ready():
     teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -61,7 +53,7 @@ async def on_ready():
 
     kanal_test = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal_test:
-        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nCzas zdarzenia z loga + kolory ANSI")
+        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nFormat: Data | godzina z loga | emoji | treść loga")
         print("Wysłano komunikat startowy")
 
     if os.path.exists('stan.txt'):
@@ -74,6 +66,7 @@ async def on_ready():
 
 @tasks.loop(seconds=60)
 async def sprawdz_logi():
+    teraz = datetime.now().strftime("%Y-%m-%d")
     print(f"[{datetime.now().strftime('%H:%M:%S')}] === START sprawdzania FTP ===")
 
     try:
@@ -113,30 +106,31 @@ async def sprawdz_logi():
 
         if linie:
             for linia in linie:
-                # Parsujemy czas zdarzenia z loga (HH:MM:SS na początku linii)
+                # Parsujemy czas zdarzenia z loga (HH:MM:SS)
                 if len(linia) >= 8 and linia[2] == ':' and linia[5] == ':':
-                    czas_zdarzenia = linia[:8]  # HH:MM:SS
+                    godzina_z_loga = linia[:8]
                 else:
-                    czas_zdarzenia = "??:??:??"
+                    godzina_z_loga = "--:--:--"
 
-                linia_z_czasem = f"[{czas_zdarzenia}] {linia}"
-
-                # Kolor ANSI + kategoria
-                kolor_ansi = ANSI_WHITE
+                # Emoji + kategoria
+                emoji = "⬜"
                 kategoria = 'test'
 
                 if '[MissionAirdrop]' in linia:
                     kategoria = 'airdrop'
-                    kolor_ansi = ANSI_YELLOW
+                    emoji = "🟡"  # żółty
                 elif '[Expansion Quests]' in linia:
                     kategoria = 'misje'
-                    kolor_ansi = ANSI_BLUE
+                    emoji = "🔵"  # niebieski
                 elif '[BaseRaiding]' in linia:
                     kategoria = 'raiding'
-                    kolor_ansi = ANSI_RED
+                    emoji = "🔴"  # czerwony
                 elif any(x in linia for x in ['[Vehicle', 'VehicleDeleted', 'VehicleEnter', 'VehicleLeave', 'VehicleEngine', 'VehicleCarKey']):
                     kategoria = 'pojazdy'
-                    kolor_ansi = ANSI_GREEN
+                    emoji = "🟢"  # zielony
+
+                # Format: Data | godzina z loga | emoji | treść loga
+                wiadomosc = f"📅 {datetime.now().strftime('%Y-%m-%d')}   ⏰ {godzina_z_loga}   {emoji} {linia}"
 
                 kanal_id = {
                     'airdrop': KANAL_AIRDROP_ID,
@@ -148,7 +142,6 @@ async def sprawdz_logi():
 
                 kanal = bot.get_channel(kanal_id)
                 if kanal:
-                    wiadomosc = f"```ansi\n{kolor_ansi}{linia_z_czasem}{ANSI_RESET}\n```"
                     try:
                         await kanal.send(wiadomosc)
                         print(f"Wysłano linię do {kategoria}")
