@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ Expansion – każda linia osobno z ANSI + czasem ZDARZENIA z loga
+# main.py - Bot logów DayZ Expansion – każda linia osobno z czasem ZDARZENIA z loga
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -63,7 +63,7 @@ async def on_ready():
 
     kanal_test = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal_test:
-        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nKażda linia osobno z czasem zdarzenia z loga + ANSI")
+        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nKażda linia z czasem zdarzenia z loga (HH:MM:SS) + ANSI")
         print("Wysłano komunikat startowy")
 
     if os.path.exists('stan.txt'):
@@ -76,8 +76,7 @@ async def on_ready():
 
 @tasks.loop(seconds=60)
 async def sprawdz_logi():
-    teraz_bota = datetime.now().strftime("%H:%M:%S")
-    print(f"[{teraz_bota}] === START sprawdzania FTP ===")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] === START sprawdzania FTP ===")
 
     try:
         ftp = ftplib.FTP()
@@ -117,8 +116,8 @@ async def sprawdz_logi():
         if linie:
             for linia in linie:
                 # Parsujemy czas zdarzenia z loga (pierwsze 8 znaków HH:MM:SS)
-                match = re.match(r'^(\d{2}:\d{2}:\d{2}\.\d{3})', linia)
-                czas_zdarzenia = match.group(1)[:8] if match else teraz_bota  # HH:MM:SS
+                match = re.match(r'^(\d{2}:\d{2}:\d{2})', linia)
+                czas_zdarzenia = match.group(1) if match else "??:??:??"
 
                 linia_z_czasem = f"[{czas_zdarzenia}] {linia}"
 
