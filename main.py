@@ -1,4 +1,4 @@
-# main.py - Bot logów DayZ Expansion – każda linia osobno z ANSI + czasem
+# main.py - Bot logów DayZ – czysty kolorowy tekst (bez embedów)
 import discord
 from discord.ext import commands, tasks
 import ftplib
@@ -7,6 +7,10 @@ import os
 from datetime import datetime
 import asyncio
 import threading
+
+# ==================================================
+# KONFIGURACJA – Zmień ID kanałów na swoje
+# ==================================================
 
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN:
@@ -19,7 +23,7 @@ FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
 FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
 FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-KANAL_TESTOWY_ID = 1469089759958663403     # niepasujące + debug
+KANAL_TESTOWY_ID = 1469089759958663403     # ← niepasujące + debug
 KANAL_AIRDROP_ID = 1469089759958663403
 KANAL_MISJE_ID   = 1469089759958663403
 KANAL_RAIDING_ID = 1469089759958663403
@@ -46,14 +50,17 @@ def run_flask():
     port = int(os.getenv('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-# ANSI kolory – poprawione escape'y + bold dla lepszego kontrastu
-ANSI_RESET   = "\\x1b[0m"
-ANSI_BOLD    = "\\x1b[1m"
-ANSI_RED     = "\\x1b[31;1m"     # jasny czerwony + bold
-ANSI_GREEN   = "\\x1b[32;1m"     # jasny zielony + bold
-ANSI_YELLOW  = "\\x1b[33;1m"     # jasny żółty + bold
-ANSI_BLUE    = "\\x1b[34;1m"     # jasny niebieski + bold
-ANSI_WHITE   = "\\x1b[37;1m"     # jasny biały + bold
+# ==================================================
+# ANSI KOLORY – poprawione dla Discorda (w ```ansi ... ```)
+# ==================================================
+
+ANSI_RESET   = "\x1b[0m"
+ANSI_BOLD    = "\x1b[1m"
+ANSI_RED     = "\x1b[31m"
+ANSI_GREEN   = "\x1b[32m"
+ANSI_YELLOW  = "\x1b[33m"
+ANSI_BLUE    = "\x1b[34m"
+ANSI_WHITE   = "\x1b[37m"
 
 @bot.event
 async def on_ready():
@@ -62,7 +69,7 @@ async def on_ready():
 
     kanal_test = bot.get_channel(KANAL_TESTOWY_ID)
     if kanal_test:
-        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nKażda linia osobno z ANSI + czasem")
+        await kanal_test.send(f"🟢 Bot wystartował {teraz}\nKażda linia osobno z kolorami ANSI + czasem")
         print("Wysłano komunikat startowy")
 
     # Wymuszamy odczyt całego logu przy starcie
@@ -118,7 +125,6 @@ async def sprawdz_logi():
             for linia in linie:
                 linia_z_czasem = f"[{teraz}] {linia}"
 
-                # Kolor ANSI + kategoria
                 kolor_ansi = ANSI_WHITE
                 kategoria = 'test'
 
@@ -145,7 +151,8 @@ async def sprawdz_logi():
 
                 kanal = bot.get_channel(kanal_id)
                 if kanal:
-                    wiadomosc = f"```ansi
+                    # Czysty tekst z ANSI w bloku kodu
+                    wiadomosc = f"```ansi\n{kolor_ansi}{linia_z_czasem}{ANSI_RESET}\n```"
                     try:
                         await kanal.send(wiadomosc)
                         print(f"Wysłano linię do {kategoria}")
