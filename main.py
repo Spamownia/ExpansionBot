@@ -1,114 +1,241 @@
+# main.py - Bot logów DayZ – ANSI kolory + tylko nowe linie (offset po rozmiarze pliku)
+import discord
+from discord.ext import commands, tasks
+import ftplib
+import io
 import os
-import time
+from datetime import datetime
+import asyncio
+import threading
 import re
 
-# ────────────────────────────────────────────────
-# KONFIGURACJA – zmień tylko te dwie linie!
-# ────────────────────────────────────────────────
-LOG_DIR = "/config/ExpansionMod/Logs"                     # np. "/app/logs" lub "/opt/render/project/src/logs"
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/TWOJ_ID/TWOJ_TOKEN"
+DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+if not DISCORD_TOKEN:
+    print("BRAK DISCORD_TOKEN → STOP")
+    exit(1)
 
-# Regex do plików logów
-LOG_FILE_PATTERN = re.compile(r"ExpLog_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.log")
+FTP_HOST = os.getenv('FTP_HOST', '147.93.162.60')
+FTP_PORT = int(os.getenv('FTP_PORT', 51421))
+FTP_USER = os.getenv('FTP_USER', 'gpftp37275281809840533')
+FTP_PASS = os.getenv('FTP_PASS', '8OhDv1P5')
+FTP_LOG_DIR = os.getenv('FTP_LOG_DIR', '/config/ExpansionMod/Logs')
 
-# Wydarzenia, które chcesz łapać
-INTERESTING_EVENTS = [
-    "[MissionAirdrop]",
-    "[VehicleDeleted]",
-    "[VehicleDestroyed]",
-    "[VehicleCarKey]",
-    "[VehicleEnter]",
-    "[VehicleLeave]",
-    "[VehicleEngine]",
-    "[Expansion Quests]",
-    "[BaseRaiding]",
-    "[AI Object Patrol]",
-    "[Safezone]"
-]
+KANAL_TESTOWY_ID = 1469089759958663403
+KANAL_AIRDROP_ID = 1469089759958663403
+KANAL_MISJE_ID = 1469089759958663403
+KANAL_RAIDING_ID = 1469089759958663403
+KANAL_POJAZDY_ID = 1469089759958663403
+KANAL_AI_ID = 1469089759958663403  # ← DODANY kanał dla AI – zmień ID na właściwe
 
-# ────────────────────────────────────────────────
-def get_latest_log_file():
-    files = [f for f in os.listdir(LOG_DIR) if LOG_FILE_PATTERN.match(f)]
-    if not files:
-        return None
-    # najnowszy wg czasu modyfikacji pliku
-    files.sort(key=lambda f: os.path.getmtime(os.path.join(LOG_DIR, f)), reverse=True)
-    return os.path.join(LOG_DIR, files[0])
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='!', intents=intents)
 
-# ────────────────────────────────────────────────
-def process_line(line):
-    # Szukamy linii w stylu: 12:33:19.123 [Expansion Quests] ...
-    match = re.match(r"(\d{2}:\d{2}:\d{2}\.\d{3}) \[(.*?)\]", line)
-    if not match:
-        return None
+# Flask
+from flask import Flask
+flask_app = Flask(__name__)
 
-    timestamp = match.group(1)
-    event_type = f"[{match.group(2)}]"
+@flask_app.route('/')
+def home():
+    return "Bot działa"
 
-    if not any(ev in line for ev in INTERESTING_EVENTS):
-        return None
+@flask_app.route('/health')
+def health():
+    return "OK", 200
 
-    emoji = "🟢"  # możesz później dodać mapę emoji jak wcześniej
-    full_ts = f"2026-02-12 {timestamp}"   # ← hardcoded, możesz parsować z nazwy pliku
-    formatted = f"{full_ts} {emoji} . {line.strip()}"
-    return formatted
+def run_flask():
+    port = int(os.getenv('PORT', 10000))
+    flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-# ────────────────────────────────────────────────
-def send_to_discord(message):
-    from discord import Webhook, RequestsWebhookAdapter
-    webhook = Webhook.from_url(DISCORD_WEBHOOK_URL, adapter=RequestsWebhookAdapter())
-    webhook.send(content=message)
+# ANSI kolory
+ANSI_RESET = "\x1b[0m"
+ANSI_RED = "\x1b[31m"
+ANSI_GREEN = "\x1b[32m"
+ANSI_YELLOW = "\x1b[33m"
+ANSI_BLUE = "\x1b[34m"
+ANSI_MAGENTA = "\x1b[35m"  # dla kategorii AI
+ANSI_WHITE = "\x1b[37m"
 
-# ────────────────────────────────────────────────
-def main():
-    current_file = None
-    current_pos = 0
-    last_size = 0
+STATE_FILE = 'last_log_state.txt'  # ← zmieniona nazwa pliku stanu
 
-    print("Bot wystartował o " + time.strftime("%Y-%m-%d %H:%M:%S"))
-    send_to_discord("Bot wystartował " + time.strftime("%Y-%m-%d %H:%M:%S"))
+def load_last_state():
+    """Zwraca (nazwa_pliku, rozmiar) lub (None, 0)"""
+    if os.path.exists(STATE_FILE):
+        with open(STATE_FILE, 'r', encoding='utf-8') as f:
+            lines = f.read().strip().splitlines()
+            if len(lines) >= 2:
+                filename = lines[0].strip()
+                try:
+                    size = int(lines[1].strip())
+                    return filename, size
+                except:
+                    pass
+    return None, 0
 
-    while True:
-        latest = get_latest_log_file()
-        if not latest:
-            print("Brak plików logów – czekam 30 s")
-            time.sleep(30)
-            continue
 
-        if latest != current_file:
-            print(f"Przełączam się na nowy plik: {os.path.basename(latest)}")
-            send_to_discord(f"🔄 Przełączono na nowy plik logów: {os.path.basename(latest)}")
-            current_file = latest
-            current_pos = 0
-            last_size = 0
+def save_last_state(filename, size):
+    """Zapisuje nazwę pliku i rozmiar"""
+    with open(STATE_FILE, 'w', encoding='utf-8') as f:
+        f.write(f"{filename}\n{size}")
 
-        try:
-            stat = os.stat(current_file)
-            current_size = stat.st_size
 
-            if current_size == last_size:
-                # plik się nie zmienił → oszczędzamy cykle
-                time.sleep(60)
+@bot.event
+async def on_ready():
+    teraz = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{teraz}] BOT URUCHOMIONY")
+
+    kanal_test = bot.get_channel(KANAL_TESTOWY_ID)
+    if kanal_test:
+        wiadomosc_startowa = (
+            f"🟢 Bot wystartował {teraz}\n"
+            "```ansi\n"
+            "Data godzina_z_loga emoji . treść loga (kolory powinny działać!)\n"
+            "```"
+        )
+        await kanal_test.send(wiadomosc_startowa)
+        print("Wysłano komunikat startowy")
+
+    # Opcjonalnie: wymuś pełne odczytanie najnowszego pliku przy starcie
+    # if os.path.exists(STATE_FILE):
+    #     os.remove(STATE_FILE)
+    #     print("Wymuszono pełne odczytanie najnowszego pliku przy starcie")
+
+    await sprawdz_logi()
+    if not sprawdz_logi.is_running():
+        sprawdz_logi.start()
+
+
+@tasks.loop(seconds=60)
+async def sprawdz_logi():
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] === START sprawdzania FTP ===")
+    try:
+        ftp = ftplib.FTP()
+        ftp.connect(FTP_HOST, FTP_PORT)
+        ftp.login(FTP_USER, FTP_PASS)
+        ftp.cwd(FTP_LOG_DIR)
+
+        pliki_raw = []
+        ftp.retrlines('LIST', pliki_raw.append)
+        pliki = [line.split()[-1] for line in pliki_raw if line.split()[-1]]
+        exp_logi = [f for f in pliki if f.startswith('ExpLog_') and f.endswith('.log')]
+
+        if not exp_logi:
+            print("Brak plików ExpLog_*")
+            ftp.quit()
+            return
+
+        def parse_date(f):
+            try:
+                return datetime.strptime(f.split('ExpLog_')[1].split('.log')[0], '%Y-%m-%d_%H-%M-%S')
+            except:
+                return datetime.min
+
+        exp_logi.sort(key=parse_date, reverse=True)
+        najnowszy = exp_logi[0]
+        print(f"Najnowszy plik: {najnowszy}")
+
+        ftp.sendcmd('TYPE I')  # binary mode do SIZE
+        current_size = ftp.size(najnowszy)
+
+        # ──────────────────────────────── NOWA LOGIKA ────────────────────────────────
+        last_filename, last_size = load_last_state()
+
+        if najnowszy != last_filename:
+            print(f"→ NOWY PLIK → reset offsetu do 0")
+            offset = 0
+        else:
+            offset = last_size
+
+        if current_size <= offset:
+            print(f"Plik się nie zmienił ({current_size} bajtów) → pomijam")
+            ftp.quit()
+            return
+
+        print(f"Przetwarzam {current_size - offset} nowych bajtów")
+
+        # ──────────────────────────────────────────────────────────────────────────────
+
+        buf = io.BytesIO()
+        ftp.retrbinary(f'RETR {najnowszy}', buf.write, rest=offset)
+        ftp.quit()
+
+        buf.seek(0)
+        nowe_bajty = buf.read().decode('utf-8', errors='ignore')
+
+        if not nowe_bajty.strip():
+            print("Brak nowych linii")
+            save_last_state(najnowszy, current_size)
+            return
+
+        linie = nowe_bajty.splitlines()
+        print(f"Nowe linie: {len(linie)}")
+
+        for linia in linie:
+            if not linia.strip():
                 continue
 
-            with open(current_file, "r", encoding="utf-8", errors="ignore") as f:
-                f.seek(current_pos)
-                while True:
-                    line = f.readline()
-                    if not line:
-                        break
-                    formatted = process_line(line.strip())
-                    if formatted:
-                        print(formatted)
-                        send_to_discord(formatted)
-                current_pos = f.tell()
-                last_size = current_size
+            match = re.match(r'^(\d{2}:\d{2}:\d{2}\.\d{3})', linia.strip())
+            godzina_z_loga = match.group(1) if match else "--:--:--.---"
 
-        except Exception as e:
-            print(f"Błąd przy czytaniu {current_file}: {e}")
-            time.sleep(15)
+            emoji_kategorii = "⬜"
+            kolor = ANSI_WHITE
+            kategoria = 'test'
 
-        time.sleep(10)  # podstawowe opóźnienie pętli
+            if '[MissionAirdrop]' in linia:
+                kategoria = 'airdrop'
+                emoji_kategorii = "🟡"
+                kolor = ANSI_YELLOW
+            elif '[Expansion Quests]' in linia:
+                kategoria = 'misje'
+                emoji_kategorii = "🔵"
+                kolor = ANSI_BLUE
+            elif '[BaseRaiding]' in linia:
+                kategoria = 'raiding'
+                emoji_kategorii = "🔴"
+                kolor = ANSI_RED
+            elif any(x in linia for x in ['[Vehicle', 'VehicleDeleted', 'VehicleEnter', 'VehicleLeave', 'VehicleEngine', 'VehicleCarKey']):
+                kategoria = 'pojazdy'
+                emoji_kategorii = "🟢"
+                kolor = ANSI_GREEN
+            elif '[AI' in linia:
+                kategoria = 'ai'
+                emoji_kategorii = "🟪"
+                kolor = ANSI_MAGENTA
 
-if __name__ == "__main__":
-    main()
+            clean_tresc = re.sub(r'^\d{2}:\d{2}:\d{2}\.\d{3}\s*', '', linia.strip())
+            tresc_kolorowa = f"{kolor}{emoji_kategorii} . {clean_tresc}{ANSI_RESET}"
+            cala_linia = f"{datetime.now().strftime('%Y-%m-%d')} {godzina_z_loga} {tresc_kolorowa}"
+            wiadomosc = f"```ansi\n{cala_linia}\n```"
+
+            kanal_id = {
+                'airdrop': KANAL_AIRDROP_ID,
+                'misje': KANAL_MISJE_ID,
+                'raiding': KANAL_RAIDING_ID,
+                'pojazdy': KANAL_POJAZDY_ID,
+                'ai': KANAL_AI_ID,
+                'test': KANAL_TESTOWY_ID
+            }[kategoria]
+
+            kanal = bot.get_channel(kanal_id)
+            if kanal:
+                try:
+                    await kanal.send(wiadomosc)
+                    print(f"Wysłano → {kategoria}")
+                except Exception as e:
+                    print(f"Błąd wysyłania do {kategoria}: {e}")
+                await asyncio.sleep(0.8)
+
+        # Zapisujemy stan dopiero po udanym przetworzeniu
+        save_last_state(najnowszy, current_size)
+        print(f"Zapisano stan: {najnowszy} | {current_size}")
+        print("=== KONIEC ===\n")
+
+    except Exception as e:
+        print(f"Błąd FTP: {e}")
+
+
+if __name__ == '__main__':
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    print(f"Flask nasłuchuje na porcie {os.getenv('PORT', 10000)}")
+    bot.run(DISCORD_TOKEN)
