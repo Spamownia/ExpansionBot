@@ -1,17 +1,18 @@
 import os
 import time
 import re
-import discord
-from discord import Webhook, RequestsWebhookAdapter  # Dla webhooka, alternatywnie użyj discord.py async
+from discord import SyncWebhook, Embed  # ← Nowe importy dla v2.0+
 
-# Konfiguracja
-LOG_DIR = "/ścieżka/do/folderu/z/logami"  # Zmień na rzeczywistą ścieżkę
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/TWOJ_WEBHOOK_ID/TWOJ_WEBHOOK_TOKEN"  # Zmień na swój webhook URL
+# ────────────────────────────────────────────────
+# KONFIGURACJA – zmień te wartości!
+# ────────────────────────────────────────────────
+LOG_DIR = "/ścieżka/do/folderu/z/logami"  # np. "/app/logs" lub "/opt/render/project/src/logs"
+WEBHOOK_URL = "https://discord.com/api/webhooks/TWOJ_ID/TWOJ_TOKEN"  # ← Twój webhook URL
 
-# Regex do nazwy pliku logów (ExpLog_YYYY-MM-DD_HH-MM-SS.log)
+# Regex do wykrywania plików logów
 LOG_FILE_PATTERN = re.compile(r"ExpLog_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.log")
 
-# Interesujące typy wydarzeń (na podstawie przykładów z Discorda i logów)
+# Wydarzenia, które Cię interesują
 INTERESTING_EVENTS = [
     "[MissionAirdrop]",
     "[VehicleDeleted]",
@@ -26,79 +27,109 @@ INTERESTING_EVENTS = [
     "[Safezone]"
 ]
 
-# Emoji dla wydarzeń (możesz dostosować)
+# Emoji dla różnych typów (możesz rozszerzyć)
 EVENT_EMOJI = {
-    "[VehicleDeleted]": "🟢",
-    "[VehicleCarKey]": "🟢",
-    "[MissionAirdrop]": "🟢",
-    # Dodaj więcej jeśli potrzeba, default: "🟢"
+    "[VehicleDeleted]": "🗑️",
+    "[VehicleCarKey]": "🔑",
+    "[MissionAirdrop]": "📦",
+    "[VehicleDestroyed]": "💥",
+    "[Expansion Quests]": "📜",
+    "[BaseRaiding]": "🛡️",
+    "[AI Object Patrol]": "🤖",
+    "[Safezone]": "🟢",
+    # default poniżej
 }
 
-# Funkcja do znalezienia najnowszego pliku logów
+# ────────────────────────────────────────────────
 def get_latest_log_file():
     files = [f for f in os.listdir(LOG_DIR) if LOG_FILE_PATTERN.match(f)]
     if not files:
         return None
-    # Sortuj po czasie modyfikacji (najnowszy na górze)
     files.sort(key=lambda f: os.path.getmtime(os.path.join(LOG_DIR, f)), reverse=True)
     return os.path.join(LOG_DIR, files[0])
 
-# Funkcja do przetwarzania linii (filtruj i formatuj)
-def process_line(line):
-    # Szukaj daty i godziny na początku: np. 06:09:26.231
+# ────────────────────────────────────────────────
+def process_line(line: str, current_date: str = "2026-02-12"):
+    # Przykład: 12:33:19 [Expansion Quests] ...
     match = re.match(r"(\d{2}:\d{2}:\d{2}\.\d{3}) \[(.*?)\]", line)
-    if match:
-        timestamp = match.group(1)
-        event_type = f"[{match.group(2)}]"
-        
-        # Sprawdź czy to interesujące wydarzenie
-        if any(event in line for event in INTERESTING_EVENTS):
-            emoji = EVENT_EMOJI.get(event_type, "🟢")
-            # Pełna data na podstawie nazwy pliku lub aktualnej daty (tutaj zakładam z pliku, ale upraszczam)
-            full_timestamp = f"2026-02-{time.strftime('%d')} {timestamp}"  # Dostosuj do rzeczywistej daty z nazwy pliku
-            formatted = f"{full_timestamp} {emoji} . {line.strip()}"
-            return formatted
-    return None
+    if not match:
+        return None
 
-# Funkcja do wysyłania na Discorda via webhook
-def send_to_discord(message):
-    webhook = Webhook.from_url(DISCORD_WEBHOOK_URL, adapter=RequestsWebhookAdapter())
-    webhook.send(content=message)  # Dla kolorów użyj embeds jeśli potrzeba
+    timestamp = match.group(1)
+    event_type = f"[{match.group(2)}]"
 
-# Główna pętla bota
+    if not any(ev in line for ev in INTERESTING_EVENTS):
+        return None
+
+    emoji = EVENT_EMOJI.get(event_type, "🟢")
+    full_ts = f"{current_date} {timestamp}"
+    content = line.strip()
+
+    return full_ts, emoji, event_type, content
+
+# ────────────────────────────────────────────────
+def send_to_discord(full_ts: str, emoji: str, event_type: str, content: str):
+    webhook = SyncWebhook.from_url(WEBHOOK_URL)
+
+    # Można dodać embed dla ładniejszego wyglądu
+    embed = Embed(
+        description=content,
+        color=0x00ff00 if "🟢" in emoji else 0xffaa00  # zielony / pomarańczowy
+    )
+    embed.set_author(name=f"{emoji} {event_type}")
+    embed.set_footer(text=full_ts)
+
+    webhook.send(embed=embed, username="DayZ Log Bot", avatar_url="https://i.imgur.com/..." )  # opcjonalny avatar
+
+# ────────────────────────────────────────────────
 def main():
     current_file = None
-    current_pos = 0  # Pozycja w pliku (offset)
+    current_pos = 0
+    last_size = 0
 
-    print("Bot wystartował o " + time.strftime("%Y-%m-%d %H:%M:%S"))
-    send_to_discord("Bot wystartował " + time.strftime("%Y-%m-%d %H:%M:%S"))
+    print("Bot wystartował o", time.strftime("%Y-%m-%d %H:%M:%S"))
+    webhook = SyncWebhook.from_url(WEBHOOK_URL)
+    webhook.send(content="Bot wystartował " + time.strftime("%Y-%m-%d %H:%M:%S"))
 
     while True:
         latest = get_latest_log_file()
-        if latest and latest != current_file:
-            print(f"Przełączam się na nowy plik: {latest}")
-            send_to_discord(f"🔄 Przełączono na nowy plik logów: {os.path.basename(latest)}")
+        if not latest:
+            print("Brak plików logów – czekam...")
+            time.sleep(30)
+            continue
+
+        if latest != current_file:
+            print(f"Przełączam się na nowy plik: {os.path.basename(latest)}")
+            webhook.send(content=f"🔄 Przełączono na nowy plik: {os.path.basename(latest)}")
             current_file = latest
-            current_pos = 0  # Zaczynaj od początku nowego pliku lub os.stat(latest).st_size dla końca
+            current_pos = 0
+            last_size = 0
 
-        if current_file:
-            try:
-                with open(current_file, "r", encoding="utf-8", errors="ignore") as f:
-                    f.seek(current_pos)
-                    while True:
-                        line = f.readline()
-                        if not line:
-                            break
-                        formatted = process_line(line)
-                        if formatted:
-                            print(formatted)
-                            send_to_discord(formatted)  # Wyślij na Discorda
-                    current_pos = f.tell()  # Zapamiętaj pozycję
-            except Exception as e:
-                print(f"Błąd podczas czytania pliku: {e}")
-                time.sleep(5)  # Retry po błędzie
+        try:
+            stat = os.stat(current_file)
+            if stat.st_size == last_size:
+                # Plik się nie zmienił → pomijamy (jak w Twoich logach)
+                time.sleep(60)  # sprawdzaj co minutę
+                continue
 
-        time.sleep(10)  # Sprawdzaj co 10 sekund (możesz zmniejszyć dla szybszego reagowania)
+            with open(current_file, "r", encoding="utf-8", errors="ignore") as f:
+                f.seek(current_pos)
+                lines = f.readlines()
+                current_pos = f.tell()
+                last_size = stat.st_size
+
+                for line in lines:
+                    result = process_line(line.strip())
+                    if result:
+                        ts, emoji, etype, cont = result
+                        print(f"{ts} {emoji} {cont}")
+                        send_to_discord(ts, emoji, etype, cont)
+
+        except Exception as e:
+            print(f"Błąd przy czytaniu {current_file}: {e}")
+            time.sleep(10)
+
+        time.sleep(10)  # podstawowe opóźnienie pętli
 
 if __name__ == "__main__":
     main()
